@@ -111,11 +111,27 @@ model VendorUser {
   status          VendorUserStatus @default(INVITED)
   inviteTokenHash String?          @unique
   inviteExpiresAt DateTime?
+  // Set by the vendor portal when the invite is accepted.
+  passwordHash    String?
   lastLoginAt     DateTime?
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
+  sessions VendorSession[]
+
   @@unique([vendorId, email])
+}
+
+// Signed-in vendor portal sessions. Only the SHA-256 hash of the cookie token is stored.
+model VendorSession {
+  id           String     @id @default(cuid())
+  tokenHash    String     @unique
+  vendorUserId String
+  vendorUser   VendorUser @relation(fields: [vendorUserId], references: [id], onDelete: Cascade)
+  expiresAt    DateTime
+  createdAt    DateTime   @default(now())
+
+  @@index([vendorUserId])
 }
 
 // Maps a Shopify product (GID) to the vendor that owns it.
