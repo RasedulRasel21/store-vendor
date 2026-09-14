@@ -61,21 +61,51 @@ export function validateVendorInput({ name, email, phone }) {
   return errors;
 }
 
+async function countVendorsByStatus(shop) {
+  const grouped = await db.vendor.groupBy({
+    by: ["status"],
+    where: { shop },
+    _count: { _all: true },
+  });
+
+  return Object.fromEntries(grouped.map((row) => [row.status, row._count._all]));
+}
+
 export async function listVendors(shop, { status } = {}) {
   const where = { shop, ...(VENDOR_STATUSES.includes(status) ? { status } : {}) };
 
-  const [vendors, grouped] = await Promise.all([
+  const [vendors, counts] = await Promise.all([
     db.vendor.findMany({
       where,
       orderBy: { createdAt: "desc" },
       include: { _count: { select: { products: true } } },
     }),
-    db.vendor.groupBy({ by: ["status"], where: { shop }, _count: { _all: true } }),
+    countVendorsByStatus(shop),
   ]);
 
-  const counts = Object.fromEntries(grouped.map((row) => [row.status, row._count._all]));
-
   return { vendors, counts };
+}
+
+export async function getVendorOverview(shop) {
+  const [counts, linkedProducts, invitedVendors, pending] = await Promise.all([
+    countVendorsByStatus(shop),
+    db.vendorProduct.count({ where: { shop } }),
+    db.vendor.count({
+      where: {
+        shop,
+        users: { some: { OR: [{ inviteTokenHash: { not: null } }, { status: "ACTIVE" }] } },
+      },
+    }),
+    db.vendor.findMany({
+      where: { shop, status: "PENDING" },
+      orderBy: { createdAt: "asc" },
+      take: 5,
+    }),
+  ]);
+
+  const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+
+  return { counts, total, linkedProducts, invitedVendors, pending };
 }
 
 export function getVendor(shop, id) {
