@@ -5,9 +5,13 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import {
   approveProductSubmission,
+  descriptionToHtml,
   getProductSubmission,
   rejectProductSubmission,
+  submissionOptions,
+  submissionVariants,
 } from "../models/product-submission.server";
+import { sanitizeDescription } from "../utils/sanitize-description.server";
 import { formatDate, SUBMISSION_REVIEW_STATUS } from "../utils/vendor-display";
 
 const ACTOR = "merchant";
@@ -24,7 +28,15 @@ export const loader = async ({ request, params }) => {
     submission: {
       id: submission.id,
       title: submission.title,
-      description: submission.description,
+      descriptionHtml: submission.descriptionHtml
+        ? sanitizeDescription(submission.descriptionHtml)
+        : descriptionToHtml(submission.description),
+      options: submissionOptions(submission),
+      variants: submissionVariants(submission),
+      trackInventory: submission.trackInventory,
+      seoTitle: submission.seoTitle,
+      seoDescription: submission.seoDescription,
+      handle: submission.handle,
       productType: submission.productType,
       tags: submission.tags,
       price: submission.price === null ? null : submission.price.toFixed(2),
@@ -174,8 +186,59 @@ export default function ReviewProduct() {
         </s-grid>
       </s-section>
 
+      {submission.options.length > 0 && (
+        <s-section heading={`Variants (${submission.variants.length})`}>
+          <s-table>
+            <s-table-header-row>
+              <s-table-header listSlot="primary">Variant</s-table-header>
+              <s-table-header listSlot="labeled" format="numeric">
+                Price
+              </s-table-header>
+              <s-table-header listSlot="labeled">SKU</s-table-header>
+              <s-table-header listSlot="labeled" format="numeric">
+                Quantity
+              </s-table-header>
+            </s-table-header-row>
+            <s-table-body>
+              {submission.variants.map((variant) => {
+                const name = submission.options
+                  .map((option) => variant.optionValues[option.name])
+                  .join(" / ");
+                return (
+                  <s-table-row key={name}>
+                    <s-table-cell>{name}</s-table-cell>
+                    <s-table-cell>{variant.price ?? "—"}</s-table-cell>
+                    <s-table-cell>{variant.sku || "—"}</s-table-cell>
+                    <s-table-cell>
+                      {submission.trackInventory && Number.isInteger(variant.inventoryQuantity)
+                        ? String(variant.inventoryQuantity)
+                        : "—"}
+                    </s-table-cell>
+                  </s-table-row>
+                );
+              })}
+            </s-table-body>
+          </s-table>
+        </s-section>
+      )}
+
       <s-section heading="Description">
-        <s-paragraph>{submission.description ?? "No description."}</s-paragraph>
+        {submission.descriptionHtml ? (
+          <div dangerouslySetInnerHTML={{ __html: submission.descriptionHtml }} />
+        ) : (
+          <s-paragraph color="subdued">No description.</s-paragraph>
+        )}
+      </s-section>
+
+      <s-section heading="Search engine listing">
+        <s-grid gridTemplateColumns="auto 1fr" gap="base">
+          <s-text color="subdued">Page title</s-text>
+          <s-text>{submission.seoTitle ?? submission.title}</s-text>
+          <s-text color="subdued">Meta description</s-text>
+          <s-text>{submission.seoDescription ?? "Not set"}</s-text>
+          <s-text color="subdued">URL handle</s-text>
+          <s-text>{submission.handle ?? "Created from the title"}</s-text>
+        </s-grid>
       </s-section>
 
       <s-section heading="Images">

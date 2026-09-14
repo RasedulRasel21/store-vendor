@@ -1,4 +1,5 @@
 import db from "../db.server";
+import { sanitizeDescription } from "../utils/sanitize-description.server";
 import { SUBMISSION_REVIEW_STATUSES } from "../utils/vendor-display";
 
 const APPROVAL_CONTEXT = `#graphql
@@ -48,8 +49,31 @@ function escapeHtml(value) {
     .replace(/"/g, "&quot;");
 }
 
-// Vendors write plain text; blank lines become paragraphs.
-function descriptionToHtml(text) {
+// New submissions store options and variants as JSON; the first portal version kept
+// a single variant's fields on the submission row.
+export function submissionVariants(submission) {
+  if (Array.isArray(submission.variants) && submission.variants.length) {
+    return submission.variants;
+  }
+  return [
+    {
+      optionValues: {},
+      price: submission.price === null ? null : submission.price.toFixed(2),
+      compareAtPrice:
+        submission.compareAtPrice === null ? null : submission.compareAtPrice.toFixed(2),
+      sku: submission.sku,
+      barcode: submission.barcode,
+      inventoryQuantity: submission.inventoryQuantity,
+    },
+  ];
+}
+
+export function submissionOptions(submission) {
+  return Array.isArray(submission.options) ? submission.options : [];
+}
+
+// Plain-text descriptions from the first portal version: blank lines become paragraphs.
+export function descriptionToHtml(text) {
   if (!text) return "";
   return text
     .split(/\r?\n\s*\r?\n/)
@@ -94,7 +118,11 @@ export async function approveProductSubmission(admin, shop, id, actor) {
   if (submission.vendor.status !== "ACTIVE") {
     return { error: "This vendor isn't active. Reactivate the vendor before approving their products." };
   }
-  if (submission.price === null) return { error: "This product has no price" };
+  const options = submissionOptions(submission);
+  const variants = submissionVariants(submission);
+  if (!variants.length || variants.some((variant) => !variant.price)) {
+    return { error: "Every variant needs a price before it can be approved" };
+  }
 
   // Claim the submission first so a double click can't create the product twice.
   const claim = await db.productSubmission.updateMany({
@@ -114,15 +142,23 @@ export async function approveProductSubmission(admin, shop, id, actor) {
       (catalog) => catalog.title === "Online Store",
     )?.publication?.id;
 
-    const tracked = submission.inventoryQuantity !== null && Boolean(locationId);
+    const tracked = submission.trackInventory && Boolean(locationId);
+    const seo = {
+      ...(submission.seoTitle ? { title: submission.seoTitle } : {}),
+      ...(submission.seoDescription ? { description: submission.seoDescription } : {}),
+    };
 
     const response = await admin.graphql(CREATE_PRODUCT, {
       variables: {
         input: {
           title: submission.title,
-          descriptionHtml: descriptionToHtml(submission.description),
+          descriptionHtml: submission.descriptionHtml
+            ? sanitizeDescription(submission.descriptionHtml)
+            : descriptionToHtml(submission.description),
           vendor: submission.vendor.name,
           ...(submission.productType ? { productType: submission.productType } : {}),
+          ...(submission.handle ? { handle: submission.handle } : {}),
+          ...(Object.keys(seo).length ? { seo } : {}),
           tags: submission.tags,
           status: "ACTIVE",
           metafields: [
@@ -133,25 +169,31 @@ export async function approveProductSubmission(admin, shop, id, actor) {
               value: submission.vendor.id,
             },
           ],
-          productOptions: [{ name: "Title", values: [{ name: "Default Title" }] }],
-          variants: [
-            {
-              optionValues: [{ optionName: "Title", name: "Default Title" }],
-              price: submission.price.toFixed(2),
-              ...(submission.compareAtPrice
-                ? { compareAtPrice: submission.compareAtPrice.toFixed(2) }
-                : {}),
-              ...(submission.barcode ? { barcode: submission.barcode } : {}),
-              inventoryItem: { ...(submission.sku ? { sku: submission.sku } : {}), tracked },
-              ...(tracked
-                ? {
-                    inventoryQuantities: [
-                      { locationId, name: "available", quantity: submission.inventoryQuantity },
-                    ],
-                  }
-                : {}),
-            },
-          ],
+          productOptions: options.length
+            ? options.map((option) => ({
+                name: option.name,
+                values: option.values.map((value) => ({ name: value })),
+              }))
+            : [{ name: "Title", values: [{ name: "Default Title" }] }],
+          variants: variants.map((variant) => ({
+            optionValues: options.length
+              ? options.map((option) => ({
+                  optionName: option.name,
+                  name: variant.optionValues[option.name],
+                }))
+              : [{ optionName: "Title", name: "Default Title" }],
+            price: variant.price,
+            ...(variant.compareAtPrice ? { compareAtPrice: variant.compareAtPrice } : {}),
+            ...(variant.barcode ? { barcode: variant.barcode } : {}),
+            inventoryItem: { ...(variant.sku ? { sku: variant.sku } : {}), tracked },
+            ...(tracked && Number.isInteger(variant.inventoryQuantity)
+              ? {
+                  inventoryQuantities: [
+                    { locationId, name: "available", quantity: variant.inventoryQuantity },
+                  ],
+                }
+              : {}),
+          })),
           files: submission.imageUrls.map((url) => ({
             originalSource: url,
             contentType: "IMAGE",

@@ -60,8 +60,20 @@ model ProductSubmission {
   submittedById     String?
   status            ProductSubmissionStatus @default(DRAFT)
   title             String
+  // Plain-text description from the first portal version; new submissions use descriptionHtml.
   description       String?
+  descriptionHtml   String?
   productType       String?
+  // [{ name, values: [string] }], up to 3 options. Empty means a single default variant.
+  options           Json?
+  // [{ optionValues: { [optionName]: value }, price, compareAtPrice, sku, barcode, inventoryQuantity }]
+  variants          Json?
+  trackInventory    Boolean                 @default(true)
+  // Shopify collection GIDs chosen by the vendor.
+  collectionIds     String[]
+  seoTitle          String?
+  seoDescription    String?
+  handle            String?
   tags              String[]
   price             Decimal?                @db.Decimal(12, 2)
   compareAtPrice    Decimal?                @db.Decimal(12, 2)
