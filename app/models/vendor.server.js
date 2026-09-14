@@ -207,6 +207,51 @@ export async function createOwnerInvite(shop, vendorId, actor) {
   return { inviteToken: invite.token };
 }
 
+// An invited owner's login email follows the vendor email; an active owner's
+// login is managed in the vendor portal and is left unchanged.
+export async function updateVendor(shop, id, input, actor) {
+  const vendor = await db.vendor.findFirst({
+    where: { id, shop },
+    include: { users: { where: { role: "OWNER" } } },
+  });
+  if (!vendor) return { errors: { form: "Vendor not found" } };
+
+  const values = {
+    name: input.name?.trim(),
+    email: input.email?.trim().toLowerCase(),
+    phone: input.phone?.trim() || null,
+  };
+
+  const errors = validateVendorInput(values);
+  if (Object.keys(errors).length) return { errors };
+
+  if (values.email !== vendor.email) {
+    const taken = await db.vendor.findUnique({
+      where: { shop_email: { shop, email: values.email } },
+    });
+    if (taken) return { errors: { email: "A vendor with this email already exists" } };
+  }
+
+  const changed = Object.keys(values).filter((field) => values[field] !== vendor[field]);
+  if (!changed.length) return { vendor, changed };
+
+  const owner = vendor.users[0];
+  const updateOwnerEmail = owner?.status === "INVITED" && changed.includes("email");
+
+  const updated = await db.vendor.update({
+    where: { id: vendor.id },
+    data: {
+      ...values,
+      activities: { create: { action: "vendor.updated", actor, details: { fields: changed } } },
+      ...(updateOwnerEmail
+        ? { users: { update: { where: { id: owner.id }, data: { email: values.email } } } }
+        : {}),
+    },
+  });
+
+  return { vendor: updated, changed };
+}
+
 export async function updateVendorNotes(shop, id, notes, actor) {
   const vendor = await db.vendor.findFirst({ where: { id, shop } });
   if (!vendor) return { error: "Vendor not found" };

@@ -136,3 +136,24 @@ export async function unlinkProduct(admin, shop, vendorId, productId, actor) {
 
   return { ok: true };
 }
+
+// Keeps the Vendor field of linked products in step with the vendor's name.
+export async function syncVendorName(admin, shop, vendorId, name) {
+  const links = await db.vendorProduct.findMany({
+    where: { shop, vendorId },
+    select: { productId: true },
+  });
+
+  let failed = 0;
+  for (const { productId } of links) {
+    const response = await admin.graphql(LINK_PRODUCT, {
+      variables: { product: { id: productId, vendor: name } },
+    });
+    const { data } = await response.json();
+    if (!data?.productUpdate?.product || data.productUpdate.userErrors.length) {
+      failed += 1;
+    }
+  }
+
+  return { updated: links.length - failed, failed };
+}

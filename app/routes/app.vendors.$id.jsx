@@ -242,6 +242,12 @@ export default function VendorDetail() {
           Reactivate
         </s-button>
       )}
+      <s-button
+        slot="secondary-actions"
+        href={`/app/vendors/${vendor.id}/edit`}
+      >
+        Edit
+      </s-button>
       {canReject && (
         <s-button
           slot="secondary-actions"
