@@ -29,6 +29,19 @@ export const SUBMISSION_REVIEW_STATUS = {
 
 export const SUBMISSION_REVIEW_STATUSES = Object.keys(SUBMISSION_REVIEW_STATUS);
 
+// Cancelled requests were withdrawn or replaced by the vendor, so merchants don't see them.
+export const CHANGE_REQUEST_STATUS = {
+  PENDING: { label: "Awaiting approval", tone: "warning" },
+  APPROVED: { label: "Approved", tone: "success" },
+  REJECTED: { label: "Rejected", tone: "critical" },
+};
+
+export const CHANGE_REQUEST_STATUSES = Object.keys(CHANGE_REQUEST_STATUS);
+
+export const CHANGE_REQUEST_TYPE = {
+  PAYOUT: "Payout details",
+};
+
 export const VENDOR_USER_STATUS = {
   INVITED: { label: "Invited", tone: "info" },
   ACTIVE: { label: "Active", tone: "success" },
@@ -42,6 +55,11 @@ const ACTIVITY_LABELS = {
   "vendor.commission_updated": "Commission changed",
   "vendor.fulfillment_updated": "Shipping and COD changed",
   "vendor_user.invite_accepted": "Portal invite accepted",
+  "vendor.contact_updated": "Contact details updated by vendor",
+  "vendor.payout_change_requested": "Payout change requested",
+  "vendor.payout_change_cancelled": "Payout change request withdrawn",
+  "vendor.payout_change_approved": "Payout change approved",
+  "vendor.payout_change_rejected": "Payout change rejected",
   "product.submitted": "Product submitted for approval",
   "product.approved": "Product approved",
   "product.rejected": "Product changes requested",

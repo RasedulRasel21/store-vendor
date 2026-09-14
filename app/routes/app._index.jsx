@@ -43,6 +43,7 @@ export default function Index() {
     invitedVendors,
     pending,
     productsToReview,
+    changesToReview,
     setupGuideDismissed,
   } = useLoaderData();
   const fetcher = useFetcher();
@@ -89,6 +90,11 @@ export default function Index() {
       label: "Products to review",
       value: productsToReview,
       href: "/app/approvals",
+    },
+    {
+      label: "Setting changes to review",
+      value: changesToReview,
+      href: "/app/changes",
     },
     {
       label: "Suspended",

@@ -14,6 +14,7 @@ import {
 } from "../models/vendor.server";
 import { getShopCurrency, getShopSettings } from "../models/settings.server";
 import { syncCodRules } from "../models/cod-rules.server";
+import { payoutRows } from "../utils/payout";
 import { effectiveCommission, formatCommission } from "../utils/commission";
 import {
   getVendorProducts,
@@ -94,6 +95,15 @@ export const loader = async ({ request, params }) => {
       codEnabled: vendor.codEnabled,
       codMaxOrderValue:
         vendor.codMaxOrderValue === null ? "" : String(vendor.codMaxOrderValue),
+      payout: payoutRows(vendor.payoutMethod, vendor.payoutDetails),
+      payoutUpdatedAt: formatDate(vendor.payoutUpdatedAt),
+      pendingPayoutRequestId: vendor.changeRequests[0]?.id ?? null,
+      address: [
+        vendor.addressLine1,
+        vendor.addressLine2,
+        [vendor.city, vendor.postalCode].filter(Boolean).join(" "),
+        vendor.countryCode,
+      ].filter(Boolean),
       createdAt: formatDate(vendor.createdAt),
       approvedAt: formatDate(vendor.approvedAt),
       users: vendor.users.map((user) => ({
@@ -374,6 +384,8 @@ export default function VendorDetail() {
           <s-text>{vendor.email}</s-text>
           <s-text color="subdued">Phone</s-text>
           <s-text>{vendor.phone ?? "Not added"}</s-text>
+          <s-text color="subdued">Address</s-text>
+          <s-text>{vendor.address.length ? vendor.address.join(", ") : "Not added"}</s-text>
           <s-text color="subdued">Store handle</s-text>
           <s-text>{vendor.handle}</s-text>
           <s-text color="subdued">Products</s-text>
@@ -383,6 +395,36 @@ export default function VendorDetail() {
           <s-text color="subdued">Approved</s-text>
           <s-text>{vendor.approvedAt ?? "Not approved"}</s-text>
         </s-grid>
+      </s-section>
+
+      <s-section heading="Payout details">
+        <s-stack direction="block" gap="base">
+          {vendor.pendingPayoutRequestId && (
+            <s-banner tone="warning" heading="Payout change waiting for approval">
+              <s-link href={`/app/changes/${vendor.pendingPayoutRequestId}`}>
+                Review the requested change
+              </s-link>
+            </s-banner>
+          )}
+          {vendor.payout.length ? (
+            <s-grid gridTemplateColumns="auto 1fr" gap="base">
+              {vendor.payout.map((row) => [
+                <s-text key={`${row.label}-label`} color="subdued">
+                  {row.label}
+                </s-text>,
+                <s-text key={`${row.label}-value`}>{row.value || "—"}</s-text>,
+              ])}
+            </s-grid>
+          ) : (
+            <s-paragraph color="subdued">
+              The vendor hasn&apos;t added payout details yet. They add them from
+              Settings in the vendor portal, and you approve them here.
+            </s-paragraph>
+          )}
+          {vendor.payoutUpdatedAt && (
+            <s-text color="subdued">{`Last approved ${vendor.payoutUpdatedAt}`}</s-text>
+          )}
+        </s-stack>
       </s-section>
 
       <s-section heading="Commission">

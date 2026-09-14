@@ -88,7 +88,7 @@ export async function listVendors(shop, { status } = {}) {
 }
 
 export async function getVendorOverview(shop) {
-  const [counts, linkedProducts, invitedVendors, pending, productsToReview] = await Promise.all([
+  const [counts, linkedProducts, invitedVendors, pending, productsToReview, changesToReview] = await Promise.all([
     countVendorsByStatus(shop),
     db.vendorProduct.count({ where: { shop } }),
     db.vendor.count({
@@ -103,11 +103,20 @@ export async function getVendorOverview(shop) {
       take: 5,
     }),
     db.productSubmission.count({ where: { shop, status: "PENDING" } }),
+    db.vendorChangeRequest.count({ where: { shop, status: "PENDING" } }),
   ]);
 
   const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
 
-  return { counts, total, linkedProducts, invitedVendors, pending, productsToReview };
+  return {
+    counts,
+    total,
+    linkedProducts,
+    invitedVendors,
+    pending,
+    productsToReview,
+    changesToReview,
+  };
 }
 
 export function getVendor(shop, id) {
@@ -116,6 +125,12 @@ export function getVendor(shop, id) {
     include: {
       users: { orderBy: { createdAt: "asc" } },
       activities: { orderBy: { createdAt: "desc" }, take: 20 },
+      changeRequests: {
+        where: { status: "PENDING" },
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: { id: true },
+      },
       _count: { select: { products: true } },
     },
   });

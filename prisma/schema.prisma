@@ -127,6 +127,25 @@ enum VendorStatus {
   REJECTED
 }
 
+enum PayoutMethod {
+  BANK
+  BKASH
+  NAGAD
+  ROCKET
+}
+
+enum ChangeRequestType {
+  PAYOUT
+}
+
+enum ChangeRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  // Replaced by a newer request, or withdrawn by the vendor.
+  CANCELLED
+}
+
 enum VendorUserRole {
   OWNER
   STAFF
@@ -159,6 +178,21 @@ model Vendor {
   codEnabled       Boolean      @default(true)
   // Null means no maximum order value for cash on delivery.
   codMaxOrderValue Decimal?     @db.Decimal(12, 2)
+
+  // Pickup and return address. Vendors edit it in the portal.
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  postalCode   String?
+  countryCode  String?
+
+  // Approved payout details. Vendors can't change them directly: they send a change
+  // request that the merchant approves. Details: { accountName, accountNumber,
+  // bankName?, branchName?, routingNumber? }.
+  payoutMethod    PayoutMethod?
+  payoutDetails   Json?
+  payoutUpdatedAt DateTime?
+
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
@@ -166,10 +200,33 @@ model Vendor {
   products           VendorProduct[]
   activities         VendorActivity[]
   productSubmissions ProductSubmission[]
+  changeRequests     VendorChangeRequest[]
 
   @@unique([shop, handle])
   @@unique([shop, email])
   @@index([shop, status])
+}
+
+// A vendor's request to change a sensitive setting, applied only when the merchant approves.
+model VendorChangeRequest {
+  id            String              @id @default(cuid())
+  shop          String
+  vendorId      String
+  vendor        Vendor              @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  type          ChangeRequestType
+  status        ChangeRequestStatus @default(PENDING)
+  // The requested values. PAYOUT: { method, details }.
+  requested     Json
+  // The approved values when the request was made, so reviews show what changed.
+  previous      Json?
+  requestedById String?
+  reviewNote    String?
+  reviewedAt    DateTime?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@index([shop, status])
+  @@index([vendorId, type, status])
 }
 
 // Portal login accounts for a vendor. Credentials are owned by the vendor portal.
