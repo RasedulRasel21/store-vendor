@@ -113,6 +113,9 @@ model VendorUser {
   inviteExpiresAt DateTime?
   // Set by the vendor portal when the invite is accepted.
   passwordHash    String?
+  // Portal sign-in lockout: reset on success, locked for a while after repeated failures.
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
   lastLoginAt     DateTime?
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
