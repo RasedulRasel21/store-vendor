@@ -39,6 +39,7 @@ model ShopSettings {
   // Default commission: a percentage of the line price plus a fixed amount per item.
   commissionPercent Decimal  @default(10) @db.Decimal(5, 2)
   commissionFixed   Decimal  @default(0) @db.Decimal(12, 2)
+  setupGuideDismissedAt DateTime?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 }

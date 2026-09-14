@@ -18,6 +18,15 @@ export async function getShopCurrency(admin) {
   return data?.shop?.currencyCode ?? "USD";
 }
 
+export function dismissSetupGuide(shop) {
+  const now = new Date();
+  return db.shopSettings.upsert({
+    where: { shop },
+    update: { setupGuideDismissedAt: now },
+    create: { shop, setupGuideDismissedAt: now },
+  });
+}
+
 export async function updateDefaultCommission(shop, input) {
   const result = parseCommission(input);
   if (result.errors) return { errors: result.errors };

@@ -1,15 +1,20 @@
-import { useLoaderData } from "react-router";
+import { useFetcher, useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { getVendorOverview } from "../models/vendor.server";
+import { dismissSetupGuide, getShopSettings } from "../models/settings.server";
 import { formatDate } from "../utils/vendor-display";
 
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
-  const overview = await getVendorOverview(session.shop);
+  const [overview, settings] = await Promise.all([
+    getVendorOverview(session.shop),
+    getShopSettings(session.shop),
+  ]);
 
   return {
     ...overview,
+    setupGuideDismissed: Boolean(settings.setupGuideDismissedAt),
     pending: overview.pending.map((vendor) => ({
       id: vendor.id,
       name: vendor.name,
@@ -19,9 +24,29 @@ export const loader = async ({ request }) => {
   };
 };
 
+export const action = async ({ request }) => {
+  const { session } = await authenticate.admin(request);
+  const formData = await request.formData();
+
+  if (formData.get("intent") === "dismiss-setup-guide") {
+    await dismissSetupGuide(session.shop);
+  }
+
+  return null;
+};
+
 export default function Index() {
-  const { counts, total, linkedProducts, invitedVendors, pending } =
-    useLoaderData();
+  const {
+    counts,
+    total,
+    linkedProducts,
+    invitedVendors,
+    pending,
+    setupGuideDismissed,
+  } = useLoaderData();
+  const fetcher = useFetcher();
+  // Hide the guide as soon as the merchant dismisses it.
+  const dismissing = fetcher.formData?.get("intent") === "dismiss-setup-guide";
 
   const steps = [
     {
@@ -73,12 +98,25 @@ export default function Index() {
         Add vendor
       </s-button>
 
-      {completedSteps < steps.length && (
+      {completedSteps < steps.length && !setupGuideDismissed && !dismissing && (
         <s-section heading="Set up your marketplace">
           <s-stack direction="block" gap="base">
-            <s-paragraph color="subdued">
-              {`${completedSteps} of ${steps.length} steps completed`}
-            </s-paragraph>
+            <s-grid gridTemplateColumns="1fr auto" gap="base" alignItems="center">
+              <s-paragraph color="subdued">
+                {`${completedSteps} of ${steps.length} steps completed`}
+              </s-paragraph>
+              <s-button
+                variant="tertiary"
+                onClick={() =>
+                  fetcher.submit(
+                    { intent: "dismiss-setup-guide" },
+                    { method: "post" },
+                  )
+                }
+              >
+                Dismiss
+              </s-button>
+            </s-grid>
             {steps.map((step) => (
               <s-grid
                 key={step.id}
