@@ -1,0 +1,397 @@
+import { useEffect, useState } from "react";
+import { useFetcher, useLoaderData } from "react-router";
+import { useAppBridge } from "@shopify/app-bridge-react";
+import { boundary } from "@shopify/shopify-app-react-router/server";
+import { authenticate } from "../shopify.server";
+import {
+  changeVendorStatus,
+  createOwnerInvite,
+  getVendor,
+  inviteUrl,
+  updateVendorNotes,
+} from "../models/vendor.server";
+import {
+  activityLabel,
+  formatDate,
+  VENDOR_STATUS,
+  VENDOR_USER_STATUS,
+} from "../utils/vendor-display";
+
+const ACTOR = "merchant";
+
+const SUCCESS_MESSAGES = {
+  approve: "Vendor approved",
+  reject: "Vendor rejected",
+  suspend: "Vendor suspended",
+  reactivate: "Vendor reactivated",
+  notes: "Notes saved",
+  invite: "Invite link created",
+};
+
+export const loader = async ({ request, params }) => {
+  const { session } = await authenticate.admin(request);
+  const vendor = await getVendor(session.shop, params.id);
+
+  if (!vendor) {
+    throw new Response("Vendor not found", { status: 404 });
+  }
+
+  return {
+    // eslint-disable-next-line no-undef
+    portalConfigured: Boolean(process.env.VENDOR_PORTAL_URL),
+    vendor: {
+      id: vendor.id,
+      name: vendor.name,
+      handle: vendor.handle,
+      email: vendor.email,
+      phone: vendor.phone,
+      status: vendor.status,
+      statusReason: vendor.statusReason,
+      notes: vendor.notes,
+      productCount: vendor._count.products,
+      createdAt: formatDate(vendor.createdAt),
+      approvedAt: formatDate(vendor.approvedAt),
+      users: vendor.users.map((user) => ({
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        status: user.status,
+        hasInvite: Boolean(user.inviteTokenHash),
+        inviteExpired: user.inviteExpiresAt ? user.inviteExpiresAt < new Date() : false,
+        inviteExpiresAt: formatDate(user.inviteExpiresAt),
+      })),
+      activities: vendor.activities.map((activity) => ({
+        id: activity.id,
+        label: activityLabel(activity.action),
+        reason: activity.details?.reason ?? null,
+        date: formatDate(activity.createdAt),
+      })),
+    },
+  };
+};
+
+export const action = async ({ request, params }) => {
+  const { session } = await authenticate.admin(request);
+  const formData = await request.formData();
+  const intent = String(formData.get("intent") ?? "");
+
+  switch (intent) {
+    case "approve":
+    case "reject":
+    case "suspend":
+    case "reactivate": {
+      const result = await changeVendorStatus(session.shop, params.id, intent, {
+        reason: String(formData.get("reason") ?? ""),
+        actor: ACTOR,
+      });
+      return { intent, error: result.error ?? null };
+    }
+    case "notes": {
+      const result = await updateVendorNotes(
+        session.shop,
+        params.id,
+        String(formData.get("notes") ?? ""),
+        ACTOR,
+      );
+      return { intent, error: result.error ?? null };
+    }
+    case "invite": {
+      const result = await createOwnerInvite(session.shop, params.id, ACTOR);
+      if (result.error) return { intent, error: result.error };
+      return {
+        intent,
+        error: null,
+        inviteToken: result.inviteToken,
+        inviteUrl: inviteUrl(result.inviteToken),
+      };
+    }
+    default:
+      return { intent, error: "Unknown action" };
+  }
+};
+
+export default function VendorDetail() {
+  const { vendor, portalConfigured } = useLoaderData();
+  const fetcher = useFetcher();
+  const shopify = useAppBridge();
+  const [rejectReason, setRejectReason] = useState("");
+  const [suspendReason, setSuspendReason] = useState("");
+
+  const result = fetcher.state === "idle" ? fetcher.data : null;
+  const busyIntent =
+    fetcher.state === "idle" ? null : fetcher.formData?.get("intent");
+  const owner = vendor.users.find((user) => user.role === "OWNER");
+  const status = VENDOR_STATUS[vendor.status];
+
+  const canApprove = ["PENDING", "REJECTED"].includes(vendor.status);
+  const canReject = vendor.status === "PENDING";
+  const canSuspend = vendor.status === "ACTIVE";
+  const canReactivate = vendor.status === "SUSPENDED";
+
+  useEffect(() => {
+    if (result && !result.error && SUCCESS_MESSAGES[result.intent]) {
+      shopify.toast.show(SUCCESS_MESSAGES[result.intent]);
+    }
+  }, [result, shopify]);
+
+  const submit = (intent, extra = {}) =>
+    fetcher.submit({ intent, ...extra }, { method: "post" });
+
+  const inviteLink = result?.intent === "invite" ? result : null;
+
+  const copyInvite = async () => {
+    try {
+      await navigator.clipboard.writeText(
+        inviteLink.inviteUrl ?? inviteLink.inviteToken,
+      );
+      shopify.toast.show("Copied");
+    } catch {
+      shopify.toast.show("Select the link and copy it manually");
+    }
+  };
+
+  return (
+    <s-page heading={vendor.name}>
+      <s-link slot="breadcrumb-actions" href="/app/vendors">
+        Vendors
+      </s-link>
+      {canApprove && (
+        <s-button
+          slot="primary-action"
+          variant="primary"
+          onClick={() => submit("approve")}
+        >
+          Approve
+        </s-button>
+      )}
+      {canReactivate && (
+        <s-button
+          slot="primary-action"
+          variant="primary"
+          onClick={() => submit("reactivate")}
+        >
+          Reactivate
+        </s-button>
+      )}
+      {canReject && (
+        <s-button
+          slot="secondary-actions"
+          commandFor="reject-modal"
+          command="--show"
+        >
+          Reject
+        </s-button>
+      )}
+      {canSuspend && (
+        <s-button
+          slot="secondary-actions"
+          tone="critical"
+          commandFor="suspend-modal"
+          command="--show"
+        >
+          Suspend
+        </s-button>
+      )}
+
+      {result?.error && (
+        <s-banner tone="critical" heading="Couldn't update this vendor">
+          {result.error}
+        </s-banner>
+      )}
+
+      {vendor.statusReason &&
+        ["REJECTED", "SUSPENDED"].includes(vendor.status) && (
+          <s-banner tone="warning" heading={`${status.label}: reason`}>
+            {vendor.statusReason}
+          </s-banner>
+        )}
+
+      <s-section heading="Vendor details">
+        <s-grid gridTemplateColumns="auto 1fr" gap="base">
+          <s-text color="subdued">Status</s-text>
+          <s-stack direction="inline">
+            <s-badge tone={status.tone}>{status.label}</s-badge>
+          </s-stack>
+          <s-text color="subdued">Email</s-text>
+          <s-text>{vendor.email}</s-text>
+          <s-text color="subdued">Phone</s-text>
+          <s-text>{vendor.phone ?? "Not added"}</s-text>
+          <s-text color="subdued">Store handle</s-text>
+          <s-text>{vendor.handle}</s-text>
+          <s-text color="subdued">Products</s-text>
+          <s-text>{vendor.productCount}</s-text>
+          <s-text color="subdued">Added</s-text>
+          <s-text>{vendor.createdAt}</s-text>
+          <s-text color="subdued">Approved</s-text>
+          <s-text>{vendor.approvedAt ?? "Not approved"}</s-text>
+        </s-grid>
+      </s-section>
+
+      <s-section heading="Portal access">
+        <s-stack direction="block" gap="base">
+          {vendor.users.map((user) => (
+            <s-stack
+              key={user.id}
+              direction="inline"
+              gap="small"
+              alignItems="center"
+            >
+              <s-text>{user.email}</s-text>
+              <s-badge>{user.role === "OWNER" ? "Owner" : "Staff"}</s-badge>
+              <s-badge tone={VENDOR_USER_STATUS[user.status].tone}>
+                {VENDOR_USER_STATUS[user.status].label}
+              </s-badge>
+            </s-stack>
+          ))}
+
+          {owner?.status === "INVITED" && (
+            <s-stack direction="block" gap="base">
+              <s-paragraph>
+                {!owner.hasInvite
+                  ? "No invite link has been created yet."
+                  : owner.inviteExpired
+                    ? "The last invite link has expired."
+                    : `The current invite link expires on ${owner.inviteExpiresAt}.`}{" "}
+                Creating a new link cancels the previous one.
+              </s-paragraph>
+              <s-stack direction="inline">
+                <s-button
+                  onClick={() => submit("invite")}
+                  loading={busyIntent === "invite"}
+                >
+                  Create invite link
+                </s-button>
+              </s-stack>
+            </s-stack>
+          )}
+
+          {inviteLink && !inviteLink.error && (
+            <s-box padding="base" background="subdued" borderRadius="base">
+              <s-stack direction="block" gap="small">
+                <s-text type="strong">Send this link to {owner?.email}</s-text>
+                <s-text>{inviteLink.inviteUrl ?? inviteLink.inviteToken}</s-text>
+                <s-paragraph color="subdued">
+                  It&apos;s shown only once and expires in 7 days.
+                </s-paragraph>
+                {!portalConfigured && (
+                  <s-paragraph color="subdued">
+                    The vendor portal address isn&apos;t set yet, so this is the
+                    invite code only. Add VENDOR_PORTAL_URL to the app&apos;s
+                    environment to get full links.
+                  </s-paragraph>
+                )}
+                <s-stack direction="inline">
+                  <s-button onClick={copyInvite}>Copy</s-button>
+                </s-stack>
+              </s-stack>
+            </s-box>
+          )}
+        </s-stack>
+      </s-section>
+
+      <s-section heading="Internal notes">
+        <fetcher.Form method="post">
+          <input type="hidden" name="intent" value="notes" />
+          <s-stack direction="block" gap="base">
+            <s-text-area
+              label="Notes"
+              name="notes"
+              defaultValue={vendor.notes ?? ""}
+              rows={4}
+              details="Only your staff can see these notes."
+            ></s-text-area>
+            <s-stack direction="inline">
+              <s-button type="submit" loading={busyIntent === "notes"}>
+                Save notes
+              </s-button>
+            </s-stack>
+          </s-stack>
+        </fetcher.Form>
+      </s-section>
+
+      <s-section slot="aside" heading="Activity">
+        {vendor.activities.length ? (
+          <s-unordered-list>
+            {vendor.activities.map((activity) => (
+              <s-list-item key={activity.id}>
+                {`${activity.label} · ${activity.date}`}
+                {activity.reason ? `: ${activity.reason}` : ""}
+              </s-list-item>
+            ))}
+          </s-unordered-list>
+        ) : (
+          <s-paragraph color="subdued">No activity yet.</s-paragraph>
+        )}
+      </s-section>
+
+      <s-modal id="reject-modal" heading="Reject vendor?">
+        <s-stack direction="block" gap="base">
+          <s-paragraph>
+            The vendor won&apos;t be able to sell on your store. Tell them why
+            so they can fix it and reapply.
+          </s-paragraph>
+          <s-text-area
+            label="Reason"
+            rows={3}
+            value={rejectReason}
+            onInput={(event) => setRejectReason(event.currentTarget.value)}
+          ></s-text-area>
+        </s-stack>
+        <s-button
+          slot="primary-action"
+          variant="primary"
+          tone="critical"
+          commandFor="reject-modal"
+          command="--hide"
+          disabled={!rejectReason.trim()}
+          onClick={() => submit("reject", { reason: rejectReason })}
+        >
+          Reject vendor
+        </s-button>
+        <s-button
+          slot="secondary-actions"
+          commandFor="reject-modal"
+          command="--hide"
+        >
+          Cancel
+        </s-button>
+      </s-modal>
+
+      <s-modal id="suspend-modal" heading="Suspend vendor?">
+        <s-stack direction="block" gap="base">
+          <s-paragraph>
+            The vendor loses portal access and can&apos;t receive new orders
+            until you reactivate them.
+          </s-paragraph>
+          <s-text-area
+            label="Reason (optional)"
+            rows={3}
+            value={suspendReason}
+            onInput={(event) => setSuspendReason(event.currentTarget.value)}
+          ></s-text-area>
+        </s-stack>
+        <s-button
+          slot="primary-action"
+          variant="primary"
+          tone="critical"
+          commandFor="suspend-modal"
+          command="--hide"
+          onClick={() => submit("suspend", { reason: suspendReason })}
+        >
+          Suspend vendor
+        </s-button>
+        <s-button
+          slot="secondary-actions"
+          commandFor="suspend-modal"
+          command="--hide"
+        >
+          Cancel
+        </s-button>
+      </s-modal>
+    </s-page>
+  );
+}
+
+export const headers = (headersArgs) => {
+  return boundary.headers(headersArgs);
+};
