@@ -9,6 +9,14 @@ embedded = true
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
 scopes = "read_products,write_products,read_inventory,write_inventory,read_locations,read_orders,write_orders,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders,read_returns,write_returns,read_customers,read_metaobjects,write_metaobjects,read_metaobject_definitions,write_metaobject_definitions,read_files,write_files,read_shipping,write_shipping,read_payment_customizations,write_payment_customizations,read_delivery_customizations,write_delivery_customizations,read_publications,write_publications,read_markets"
 
+[product.metafields.app.vendor_id]
+type = "single_line_text_field"
+name = "Vendor ID"
+description = "StoreVendor vendor that owns this product"
+
+  [product.metafields.app.vendor_id.access]
+  admin = "merchant_read"
+
 [webhooks]
 api_version = "2026-10"
 
@@ -23,6 +31,10 @@ api_version = "2026-10"
   [[webhooks.subscriptions]]
   uri = "/webhooks/compliance"
   compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/products/delete"
+  topics = [ "products/delete" ]
 
 [auth]
 redirect_urls = [ "https://store-vendor.vercel.app/auth/callback" ]

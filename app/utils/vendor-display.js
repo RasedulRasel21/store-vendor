@@ -21,6 +21,8 @@ const ACTIVITY_LABELS = {
   "vendor.reactivate": "Reactivated",
   "vendor.notes_updated": "Notes updated",
   "vendor.invite_created": "Invite link created",
+  "vendor.products_linked": "Products linked",
+  "vendor.product_unlinked": "Product unlinked",
 };
 
 export function activityLabel(action) {

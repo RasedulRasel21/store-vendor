@@ -11,6 +11,11 @@ import {
   updateVendorNotes,
 } from "../models/vendor.server";
 import {
+  getVendorProducts,
+  linkProducts,
+  unlinkProduct,
+} from "../models/vendor-product.server";
+import {
   activityLabel,
   formatDate,
   VENDOR_STATUS,
@@ -26,17 +31,27 @@ const SUCCESS_MESSAGES = {
   reactivate: "Vendor reactivated",
   notes: "Notes saved",
   invite: "Invite link created",
+  "unlink-product": "Product unlinked",
+};
+
+const PRODUCT_STATUS_LABEL = {
+  ACTIVE: "Active",
+  DRAFT: "Draft",
+  ARCHIVED: "Archived",
 };
 
 export const loader = async ({ request, params }) => {
-  const { session } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const vendor = await getVendor(session.shop, params.id);
 
   if (!vendor) {
     throw new Response("Vendor not found", { status: 404 });
   }
 
+  const products = await getVendorProducts(admin, session.shop, vendor.id);
+
   return {
+    products,
     // eslint-disable-next-line no-undef
     portalConfigured: Boolean(process.env.VENDOR_PORTAL_URL),
     vendor: {
@@ -71,7 +86,7 @@ export const loader = async ({ request, params }) => {
 };
 
 export const action = async ({ request, params }) => {
-  const { session } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const formData = await request.formData();
   const intent = String(formData.get("intent") ?? "");
 
@@ -105,13 +120,40 @@ export const action = async ({ request, params }) => {
         inviteUrl: inviteUrl(result.inviteToken),
       };
     }
+    case "link-products": {
+      let productIds = [];
+      try {
+        productIds = JSON.parse(String(formData.get("productIds") ?? "[]"));
+      } catch {
+        return { intent, error: "The product selection couldn't be read" };
+      }
+      const result = await linkProducts(
+        admin,
+        session.shop,
+        params.id,
+        Array.isArray(productIds) ? productIds.map(String) : [],
+        ACTOR,
+      );
+      if (result.error) return { intent, error: result.error };
+      return { intent, error: null, linked: result.linked, failed: result.failed };
+    }
+    case "unlink-product": {
+      const result = await unlinkProduct(
+        admin,
+        session.shop,
+        params.id,
+        String(formData.get("productId") ?? ""),
+        ACTOR,
+      );
+      return { intent, error: result.error ?? null };
+    }
     default:
       return { intent, error: "Unknown action" };
   }
 };
 
 export default function VendorDetail() {
-  const { vendor, portalConfigured } = useLoaderData();
+  const { vendor, products, portalConfigured } = useLoaderData();
   const fetcher = useFetcher();
   const shopify = useAppBridge();
   const [rejectReason, setRejectReason] = useState("");
@@ -129,13 +171,40 @@ export default function VendorDetail() {
   const canReactivate = vendor.status === "SUSPENDED";
 
   useEffect(() => {
-    if (result && !result.error && SUCCESS_MESSAGES[result.intent]) {
+    if (!result || result.error) return;
+
+    if (result.intent === "link-products") {
+      const noun = result.linked === 1 ? "product" : "products";
+      shopify.toast.show(
+        result.failed
+          ? `${result.linked} ${noun} linked, ${result.failed} couldn't be updated`
+          : `${result.linked} ${noun} linked`,
+      );
+      return;
+    }
+
+    if (SUCCESS_MESSAGES[result.intent]) {
       shopify.toast.show(SUCCESS_MESSAGES[result.intent]);
     }
   }, [result, shopify]);
 
   const submit = (intent, extra = {}) =>
     fetcher.submit({ intent, ...extra }, { method: "post" });
+
+  const addProducts = async () => {
+    const selection = await shopify.resourcePicker({
+      type: "product",
+      multiple: true,
+    });
+    if (!selection?.length) return;
+
+    submit("link-products", {
+      productIds: JSON.stringify(selection.map((product) => product.id)),
+    });
+  };
+
+  const unlinkingId =
+    busyIntent === "unlink-product" ? fetcher.formData?.get("productId") : null;
 
   const inviteLink = result?.intent === "invite" ? result : null;
 
@@ -225,6 +294,66 @@ export default function VendorDetail() {
           <s-text color="subdued">Approved</s-text>
           <s-text>{vendor.approvedAt ?? "Not approved"}</s-text>
         </s-grid>
+      </s-section>
+
+      <s-section heading="Products">
+        <s-stack direction="block" gap="base">
+          <s-paragraph color="subdued">
+            Linking a product sets its Vendor field to {vendor.name}. A product
+            can belong to one vendor at a time.
+          </s-paragraph>
+          <s-stack direction="inline">
+            <s-button
+              onClick={addProducts}
+              loading={busyIntent === "link-products"}
+            >
+              Add products
+            </s-button>
+          </s-stack>
+
+          {products.length ? (
+            <s-table>
+              <s-table-header-row>
+                <s-table-header listSlot="primary">Product</s-table-header>
+                <s-table-header listSlot="inline">Status</s-table-header>
+                <s-table-header listSlot="labeled">Action</s-table-header>
+              </s-table-header-row>
+              <s-table-body>
+                {products.map((product) => (
+                  <s-table-row key={product.id}>
+                    <s-table-cell>{product.title}</s-table-cell>
+                    <s-table-cell>
+                      {product.status ? (
+                        <s-badge>{PRODUCT_STATUS_LABEL[product.status]}</s-badge>
+                      ) : (
+                        <s-badge tone="critical">Deleted</s-badge>
+                      )}
+                    </s-table-cell>
+                    <s-table-cell>
+                      <s-button
+                        variant="tertiary"
+                        onClick={() =>
+                          submit("unlink-product", { productId: product.id })
+                        }
+                        loading={unlinkingId === product.id}
+                      >
+                        Unlink
+                      </s-button>
+                    </s-table-cell>
+                  </s-table-row>
+                ))}
+              </s-table-body>
+            </s-table>
+          ) : (
+            <s-paragraph color="subdued">No products linked yet.</s-paragraph>
+          )}
+
+          {vendor.productCount > products.length && (
+            <s-paragraph color="subdued">
+              {`Showing the ${products.length} most recently linked of ${vendor.productCount} products.`}
+            </s-paragraph>
+          )}
+        </s-stack>
       </s-section>
 
       <s-section heading="Portal access">
