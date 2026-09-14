@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import db from "../db.server";
 import { parseCommission } from "../utils/commission";
-import { VENDOR_STATUSES } from "../utils/vendor-display";
+import { SHIPPING_MODES, VENDOR_STATUSES } from "../utils/vendor-display";
 
 const INVITE_TTL_DAYS = 7;
 
@@ -278,6 +278,40 @@ export async function updateVendorCommission(shop, id, { useDefault, percent, fi
             : { percent: values.commissionPercent, fixed: values.commissionFixed },
         },
       },
+    },
+  });
+
+  return { ok: true };
+}
+
+export async function updateVendorFulfillment(shop, id, input, actor) {
+  const vendor = await db.vendor.findFirst({ where: { id, shop } });
+  if (!vendor) return { error: "Vendor not found" };
+
+  const errors = {};
+  const shippingMode = String(input.shippingMode ?? "");
+  const codEnabled = Boolean(input.codEnabled);
+  const limitText = String(input.codMaxOrderValue ?? "").trim();
+
+  if (!SHIPPING_MODES.includes(shippingMode)) {
+    errors.shippingMode = "Choose who ships this vendor's orders";
+  }
+  if (codEnabled && limitText && !/^\d+(\.\d{1,2})?$/.test(limitText)) {
+    errors.codMaxOrderValue = "Enter an amount with up to 2 decimal places, or leave it empty for no limit";
+  }
+  if (Object.keys(errors).length) return { errors };
+
+  const values = {
+    shippingMode,
+    codEnabled,
+    codMaxOrderValue: codEnabled && limitText ? Number(limitText).toFixed(2) : null,
+  };
+
+  await db.vendor.update({
+    where: { id: vendor.id },
+    data: {
+      ...values,
+      activities: { create: { action: "vendor.fulfillment_updated", actor, details: values } },
     },
   });
 

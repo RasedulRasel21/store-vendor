@@ -7,6 +7,19 @@ export const VENDOR_STATUS = {
 
 export const VENDOR_STATUSES = Object.keys(VENDOR_STATUS);
 
+export const SHIPPING_MODE = {
+  VENDOR_SHIPS: {
+    label: "Vendor ships",
+    details: "The vendor packs and ships their own order lines and adds tracking.",
+  },
+  STORE_SHIPS: {
+    label: "Store ships",
+    details: "The vendor sends stock to you, and you fulfill their orders.",
+  },
+};
+
+export const SHIPPING_MODES = Object.keys(SHIPPING_MODE);
+
 export const VENDOR_USER_STATUS = {
   INVITED: { label: "Invited", tone: "info" },
   ACTIVE: { label: "Active", tone: "success" },
@@ -18,6 +31,7 @@ const ACTIVITY_LABELS = {
   "vendor.updated": "Details updated",
   "vendor.imported": "Imported from Shopify",
   "vendor.commission_updated": "Commission changed",
+  "vendor.fulfillment_updated": "Shipping and COD changed",
   "vendor.approve": "Approved",
   "vendor.reject": "Rejected",
   "vendor.suspend": "Suspended",

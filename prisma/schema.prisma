@@ -43,6 +43,11 @@ model ShopSettings {
   updatedAt         DateTime @updatedAt
 }
 
+enum ShippingMode {
+  VENDOR_SHIPS
+  STORE_SHIPS
+}
+
 enum VendorStatus {
   PENDING
   ACTIVE
@@ -76,6 +81,12 @@ model Vendor {
   // Null means the vendor uses the store's default commission.
   commissionPercent Decimal? @db.Decimal(5, 2)
   commissionFixed   Decimal? @db.Decimal(12, 2)
+
+  shippingMode     ShippingMode @default(VENDOR_SHIPS)
+  // Whether cash on delivery is offered for carts with this vendor's products.
+  codEnabled       Boolean      @default(true)
+  // Null means no maximum order value for cash on delivery.
+  codMaxOrderValue Decimal?     @db.Decimal(12, 2)
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 

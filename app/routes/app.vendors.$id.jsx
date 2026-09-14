@@ -9,6 +9,7 @@ import {
   getVendor,
   inviteUrl,
   updateVendorCommission,
+  updateVendorFulfillment,
   updateVendorNotes,
 } from "../models/vendor.server";
 import { getShopCurrency, getShopSettings } from "../models/settings.server";
@@ -21,6 +22,8 @@ import {
 import {
   activityLabel,
   formatDate,
+  SHIPPING_MODE,
+  SHIPPING_MODES,
   VENDOR_STATUS,
   VENDOR_USER_STATUS,
 } from "../utils/vendor-display";
@@ -36,6 +39,7 @@ const SUCCESS_MESSAGES = {
   invite: "Invite link created",
   "unlink-product": "Product unlinked",
   commission: "Commission saved",
+  fulfillment: "Shipping and cash on delivery saved",
 };
 
 const PRODUCT_STATUS_LABEL = {
@@ -85,6 +89,10 @@ export const loader = async ({ request, params }) => {
       statusReason: vendor.statusReason,
       notes: vendor.notes,
       productCount: vendor._count.products,
+      shippingMode: vendor.shippingMode,
+      codEnabled: vendor.codEnabled,
+      codMaxOrderValue:
+        vendor.codMaxOrderValue === null ? "" : String(vendor.codMaxOrderValue),
       createdAt: formatDate(vendor.createdAt),
       approvedAt: formatDate(vendor.approvedAt),
       users: vendor.users.map((user) => ({
@@ -139,6 +147,23 @@ export const action = async ({ request, params }) => {
         error: null,
         inviteToken: result.inviteToken,
         inviteUrl: inviteUrl(result.inviteToken),
+      };
+    }
+    case "fulfillment": {
+      const result = await updateVendorFulfillment(
+        session.shop,
+        params.id,
+        {
+          shippingMode: formData.get("shippingMode"),
+          codEnabled: formData.get("codEnabled") === "on",
+          codMaxOrderValue: formData.get("codMaxOrderValue"),
+        },
+        ACTOR,
+      );
+      return {
+        intent,
+        error: result.error ?? null,
+        fieldErrors: result.errors ?? null,
       };
     }
     case "commission": {
@@ -196,6 +221,7 @@ export default function VendorDetail() {
   const [useDefaultCommission, setUseDefaultCommission] = useState(
     !commission.custom,
   );
+  const [codEnabled, setCodEnabled] = useState(vendor.codEnabled);
   const fetcher = useFetcher();
   const shopify = useAppBridge();
   const [rejectReason, setRejectReason] = useState("");
@@ -399,6 +425,64 @@ export default function VendorDetail() {
             <s-stack direction="inline">
               <s-button type="submit" loading={busyIntent === "commission"}>
                 Save commission
+              </s-button>
+            </s-stack>
+          </s-stack>
+        </fetcher.Form>
+      </s-section>
+
+      <s-section heading="Shipping and cash on delivery">
+        <fetcher.Form method="post">
+          <input type="hidden" name="intent" value="fulfillment" />
+          <s-stack direction="block" gap="base">
+            <s-choice-list
+              label="Who ships this vendor's orders"
+              name="shippingMode"
+              error={
+                result?.intent === "fulfillment"
+                  ? result.fieldErrors?.shippingMode
+                  : undefined
+              }
+            >
+              {SHIPPING_MODES.map((mode) => (
+                <s-choice
+                  key={mode}
+                  value={mode}
+                  defaultSelected={vendor.shippingMode === mode}
+                >
+                  {SHIPPING_MODE[mode].label}
+                  <s-text slot="details">{SHIPPING_MODE[mode].details}</s-text>
+                </s-choice>
+              ))}
+            </s-choice-list>
+            <s-checkbox
+              name="codEnabled"
+              value="on"
+              label="Allow cash on delivery"
+              details="Controls whether cash on delivery is offered for carts with this vendor's products."
+              checked={codEnabled}
+              onChange={(event) => setCodEnabled(event.currentTarget.checked)}
+            ></s-checkbox>
+            {codEnabled && (
+              <s-number-field
+                label="Maximum order value for cash on delivery"
+                name="codMaxOrderValue"
+                suffix={currencyCode}
+                inputMode="decimal"
+                step={0.01}
+                min={0}
+                defaultValue={vendor.codMaxOrderValue}
+                details="Leave empty for no limit."
+                error={
+                  result?.intent === "fulfillment"
+                    ? result.fieldErrors?.codMaxOrderValue
+                    : undefined
+                }
+              ></s-number-field>
+            )}
+            <s-stack direction="inline">
+              <s-button type="submit" loading={busyIntent === "fulfillment"}>
+                Save shipping and COD
               </s-button>
             </s-stack>
           </s-stack>
