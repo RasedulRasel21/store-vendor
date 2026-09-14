@@ -2,6 +2,7 @@ import { Outlet, useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { authenticate } from "../shopify.server";
+import { ensureCodRules } from "../models/cod-rules.server";
 import { ensureCollectionsSynced } from "../models/collection.server";
 import { ensureShopCurrency } from "../models/settings.server";
 
@@ -13,6 +14,7 @@ export const loader = async ({ request }) => {
   const results = await Promise.allSettled([
     ensureShopCurrency(admin, session.shop),
     ensureCollectionsSynced(admin, session.shop),
+    ensureCodRules(admin, session.shop),
   ]);
   for (const result of results) {
     if (result.status === "rejected") console.error("Couldn't prepare shop data for vendors", result.reason);

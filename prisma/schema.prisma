@@ -44,6 +44,8 @@ model ShopSettings {
   currencyCode      String?
   // When the store's manual collections were last fully synced into ShopCollection.
   collectionsSyncedAt DateTime?
+  // The payment customization that runs the cod-rules Function for this shop.
+  codRulesCustomizationId String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 }

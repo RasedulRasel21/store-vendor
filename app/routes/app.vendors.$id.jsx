@@ -13,6 +13,7 @@ import {
   updateVendorNotes,
 } from "../models/vendor.server";
 import { getShopCurrency, getShopSettings } from "../models/settings.server";
+import { syncCodRules } from "../models/cod-rules.server";
 import { effectiveCommission, formatCommission } from "../utils/commission";
 import {
   getVendorProducts,
@@ -160,10 +161,22 @@ export const action = async ({ request, params }) => {
         },
         ACTOR,
       );
+      let warning = null;
+      if (result.ok) {
+        try {
+          // Checkout reads COD rules from Shopify, so push the change right away.
+          await syncCodRules(admin, session.shop);
+        } catch (error) {
+          console.error("COD rules sync failed", error);
+          warning =
+            "Saved, but checkout isn't using the new cash on delivery settings yet. Save again to retry.";
+        }
+      }
       return {
         intent,
         error: result.error ?? null,
         fieldErrors: result.errors ?? null,
+        warning,
       };
     }
     case "commission": {
@@ -251,7 +264,9 @@ export default function VendorDetail() {
       return;
     }
 
-    if (SUCCESS_MESSAGES[result.intent]) {
+    if (result.warning) {
+      shopify.toast.show(result.warning, { isError: true });
+    } else if (SUCCESS_MESSAGES[result.intent]) {
       shopify.toast.show(SUCCESS_MESSAGES[result.intent]);
     }
   }, [result, shopify]);

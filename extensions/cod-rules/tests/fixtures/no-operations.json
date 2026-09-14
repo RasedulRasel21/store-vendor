@@ -1,0 +1,28 @@
+{
+  "payload": {
+    "export": "cart-payment-methods-transform-run",
+    "target": "cart.payment-methods.transform.run",
+    "input": {
+      "cart": {
+        "cost": { "totalAmount": { "amount": "50.0" } },
+        "lines": [
+          {
+            "merchandise": {
+              "__typename": "ProductVariant",
+              "product": { "vendorId": null }
+            }
+          }
+        ]
+      },
+      "presentmentCurrencyRate": "1.0",
+      "paymentMethods": [
+        { "id": "gid://shopify/PaymentCustomizationPaymentMethod/1", "name": "Credit card" },
+        { "id": "gid://shopify/PaymentCustomizationPaymentMethod/2", "name": "Cash on Delivery (COD)" }
+      ],
+      "paymentCustomization": { "metafield": null }
+    },
+    "output": {
+      "operations": []
+    }
+  }
+}

@@ -1,0 +1,31 @@
+query CartPaymentMethodsTransformRunInput {
+  cart {
+    cost {
+      totalAmount {
+        amount
+      }
+    }
+    lines {
+      merchandise {
+        __typename
+        ... on ProductVariant {
+          product {
+            vendorId: metafield(namespace: "$app", key: "vendor_id") {
+              value
+            }
+          }
+        }
+      }
+    }
+  }
+  presentmentCurrencyRate
+  paymentMethods {
+    id
+    name
+  }
+  paymentCustomization {
+    metafield(namespace: "$app:cod-rules", key: "function-configuration") {
+      jsonValue
+    }
+  }
+}

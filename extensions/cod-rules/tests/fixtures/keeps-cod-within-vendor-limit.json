@@ -1,0 +1,42 @@
+{
+  "payload": {
+    "export": "cart-payment-methods-transform-run",
+    "target": "cart.payment-methods.transform.run",
+    "input": {
+      "cart": {
+        "cost": { "totalAmount": { "amount": "9000.0" } },
+        "lines": [
+          {
+            "merchandise": {
+              "__typename": "ProductVariant",
+              "product": { "vendorId": { "value": "vendor-with-limit" } }
+            }
+          },
+          {
+            "merchandise": {
+              "__typename": "ProductVariant",
+              "product": { "vendorId": { "value": "vendor-without-rules" } }
+            }
+          }
+        ]
+      },
+      "presentmentCurrencyRate": "100.0",
+      "paymentMethods": [
+        { "id": "gid://shopify/PaymentCustomizationPaymentMethod/1", "name": "Credit card" },
+        { "id": "gid://shopify/PaymentCustomizationPaymentMethod/2", "name": "Cash on Delivery (COD)" }
+      ],
+      "paymentCustomization": {
+        "metafield": {
+          "jsonValue": {
+            "vendors": {
+              "vendor-with-limit": { "codEnabled": true, "maxOrderValue": 100 }
+            }
+          }
+        }
+      }
+    },
+    "output": {
+      "operations": []
+    }
+  }
+}

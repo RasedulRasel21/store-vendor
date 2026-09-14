@@ -1,0 +1,4 @@
+{
+  "name": "Vendor cash on delivery rules",
+  "description": "Hides cash on delivery when a vendor in the cart doesn't offer it or the order is above their limit"
+}
