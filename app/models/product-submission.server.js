@@ -1,4 +1,5 @@
 import db from "../db.server";
+import { getShopCollections } from "./collection.server";
 import { sanitizeDescription } from "../utils/sanitize-description.server";
 import { SUBMISSION_REVIEW_STATUSES } from "../utils/vendor-display";
 
@@ -218,6 +219,8 @@ export async function approveProductSubmission(admin, shop, id, actor) {
       catalog.apps?.nodes?.some((app) => app.handle === ONLINE_STORE_APP_HANDLE),
     )?.publication?.id;
 
+    // Collections deleted (or turned smart) since the vendor picked them are skipped.
+    const collections = await getShopCollections(shop, submission.collectionIds);
     const seo = {
       ...(submission.seoTitle ? { title: submission.seoTitle } : {}),
       ...(submission.seoDescription ? { description: submission.seoDescription } : {}),
@@ -235,6 +238,9 @@ export async function approveProductSubmission(admin, shop, id, actor) {
           ...(submission.handle ? { handle: submission.handle } : {}),
           ...(Object.keys(seo).length ? { seo } : {}),
           tags: submission.tags,
+          ...(collections.length
+            ? { collections: collections.map((collection) => collection.collectionId) }
+            : {}),
           status: "ACTIVE",
           metafields: [
             {

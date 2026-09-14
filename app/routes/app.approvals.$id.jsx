@@ -11,6 +11,7 @@ import {
   submissionOptions,
   submissionVariants,
 } from "../models/product-submission.server";
+import { getShopCollections } from "../models/collection.server";
 import { getShopSettings } from "../models/settings.server";
 import { sanitizeDescription } from "../utils/sanitize-description.server";
 import { formatDate, SUBMISSION_REVIEW_STATUS } from "../utils/vendor-display";
@@ -51,8 +52,11 @@ export const loader = async ({ request, params }) => {
     throw new Response("Product submission not found", { status: 404 });
   }
 
+  const collections = await getShopCollections(session.shop, submission.collectionIds);
+
   return {
     currencyCode: settings.currencyCode ?? "USD",
+    collections: collections.map((collection) => collection.title),
     submission: {
       id: submission.id,
       title: submission.title,
@@ -101,7 +105,7 @@ export const action = async ({ request, params }) => {
 };
 
 export default function ReviewProduct() {
-  const { submission, currencyCode } = useLoaderData();
+  const { submission, currencyCode, collections } = useLoaderData();
   const fetcher = useFetcher();
   const shopify = useAppBridge();
   const [note, setNote] = useState("");
@@ -190,6 +194,8 @@ export default function ReviewProduct() {
           <s-text>{submission.productType ?? "Not set"}</s-text>
           <s-text color="subdued">Tags</s-text>
           <s-text>{submission.tags.length ? submission.tags.join(", ") : "None"}</s-text>
+          <s-text color="subdued">Collections</s-text>
+          <s-text>{collections.length ? collections.join(", ") : "None"}</s-text>
         </s-grid>
       </s-section>
 

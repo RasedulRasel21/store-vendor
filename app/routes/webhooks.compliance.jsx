@@ -23,6 +23,7 @@ export const action = async ({ request }) => {
       const shopDomain = payload.shop_domain ?? shop;
       await db.$transaction([
         db.vendorProduct.deleteMany({ where: { shop: shopDomain } }),
+        db.shopCollection.deleteMany({ where: { shop: shopDomain } }),
         db.vendor.deleteMany({ where: { shop: shopDomain } }),
         db.shopSettings.deleteMany({ where: { shop: shopDomain } }),
         db.session.deleteMany({ where: { shop: shopDomain } }),

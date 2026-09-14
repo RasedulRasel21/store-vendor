@@ -36,6 +36,10 @@ api_version = "2026-10"
   uri = "/webhooks/products/delete"
   topics = [ "products/delete" ]
 
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/collections"
+  topics = [ "collections/create", "collections/update", "collections/delete" ]
+
 [auth]
 redirect_urls = [ "https://store-vendor.vercel.app/auth/callback" ]
 

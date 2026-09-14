@@ -42,8 +42,26 @@ model ShopSettings {
   setupGuideDismissedAt DateTime?
   // Shop currency (for example "BDT"), saved by the app so the vendor portal can show prices.
   currencyCode      String?
+  // When the store's manual collections were last fully synced into ShopCollection.
+  collectionsSyncedAt DateTime?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+}
+
+// The store's manual collections, which vendors can add their products to.
+// Smart collections are left out: Shopify adds products to them by their rules.
+model ShopCollection {
+  id           String   @id @default(cuid())
+  shop         String
+  // Shopify collection GID.
+  collectionId String
+  title        String
+  handle       String
+  imageUrl     String?
+  syncedAt     DateTime @default(now())
+
+  @@unique([shop, collectionId])
+  @@index([shop, title])
 }
 
 enum ProductSubmissionStatus {
