@@ -16,6 +16,7 @@ export const VENDOR_USER_STATUS = {
 const ACTIVITY_LABELS = {
   "vendor.created": "Vendor added",
   "vendor.updated": "Details updated",
+  "vendor.imported": "Imported from Shopify",
   "vendor.approve": "Approved",
   "vendor.reject": "Rejected",
   "vendor.suspend": "Suspended",

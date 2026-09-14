@@ -40,6 +40,46 @@ const UNLINK_PRODUCT = `#graphql
     }
   }`;
 
+const SET_VENDOR_METAFIELDS = `#graphql
+  mutation SetVendorMetafields($metafields: [MetafieldsSetInput!]!) {
+    metafieldsSet(metafields: $metafields) {
+      metafields {
+        id
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }`;
+
+// Writes the vendor_id metafield in batches of 25, the metafieldsSet limit.
+// Returns the product IDs that were saved.
+export async function setVendorMetafields(admin, productIds, vendorId) {
+  const saved = [];
+
+  for (let start = 0; start < productIds.length; start += 25) {
+    const batch = productIds.slice(start, start + 25);
+    const response = await admin.graphql(SET_VENDOR_METAFIELDS, {
+      variables: {
+        metafields: batch.map((ownerId) => ({
+          ownerId,
+          ...VENDOR_METAFIELD,
+          type: "single_line_text_field",
+          value: vendorId,
+        })),
+      },
+    });
+    const { data } = await response.json();
+
+    if (data?.metafieldsSet && !data.metafieldsSet.userErrors.length) {
+      saved.push(...batch);
+    }
+  }
+
+  return saved;
+}
+
 export async function getVendorProducts(admin, shop, vendorId) {
   const links = await db.vendorProduct.findMany({
     where: { shop, vendorId },

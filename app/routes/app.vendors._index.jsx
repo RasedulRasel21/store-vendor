@@ -47,6 +47,9 @@ export default function VendorsIndex() {
       <s-button slot="primary-action" variant="primary" href="/app/vendors/new">
         Add vendor
       </s-button>
+      <s-button slot="secondary-actions" href="/app/vendors/import">
+        Import from Shopify
+      </s-button>
 
       {total === 0 ? (
         <s-section>
