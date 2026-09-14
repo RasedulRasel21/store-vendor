@@ -9,13 +9,23 @@ const APPROVAL_CONTEXT = `#graphql
     }
     catalogs(first: 20, type: APP) {
       nodes {
-        title
         publication {
           id
+        }
+        ... on AppCatalog {
+          apps(first: 5) {
+            nodes {
+              handle
+            }
+          }
         }
       }
     }
   }`;
+
+// Catalog titles vary by store (for example "Channel Catalog 98808561952"), so the
+// Online Store channel is identified by its app handle.
+const ONLINE_STORE_APP_HANDLE = "online_store";
 
 const CREATE_PRODUCT = `#graphql
   mutation CreateVendorProduct($input: ProductSetInput!) {
@@ -138,8 +148,8 @@ export async function approveProductSubmission(admin, shop, id, actor) {
     const contextResponse = await admin.graphql(APPROVAL_CONTEXT);
     const { data: context } = await contextResponse.json();
     const locationId = context?.location?.id;
-    const onlineStorePublicationId = context?.catalogs?.nodes?.find(
-      (catalog) => catalog.title === "Online Store",
+    const onlineStorePublicationId = context?.catalogs?.nodes?.find((catalog) =>
+      catalog.apps?.nodes?.some((app) => app.handle === ONLINE_STORE_APP_HANDLE),
     )?.publication?.id;
 
     const tracked = submission.trackInventory && Boolean(locationId);
