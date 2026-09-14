@@ -2,9 +2,17 @@ import { Outlet, useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { authenticate } from "../shopify.server";
+import { ensureShopCurrency } from "../models/settings.server";
 
 export const loader = async ({ request }) => {
-  await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
+
+  try {
+    await ensureShopCurrency(admin, session.shop);
+  } catch (error) {
+    // The currency is only a display detail for the vendor portal; never block the admin.
+    console.error("Couldn't save the shop currency", error);
+  }
 
   // eslint-disable-next-line no-undef
   return { apiKey: process.env.SHOPIFY_API_KEY || "" };

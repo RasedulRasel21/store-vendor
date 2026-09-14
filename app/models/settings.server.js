@@ -18,6 +18,16 @@ export async function getShopCurrency(admin) {
   return data?.shop?.currencyCode ?? "USD";
 }
 
+// Saves the shop currency once, so the vendor portal can show prices in it.
+export async function ensureShopCurrency(admin, shop) {
+  const settings = await getShopSettings(shop);
+  if (settings.currencyCode) return settings.currencyCode;
+
+  const currencyCode = await getShopCurrency(admin);
+  await db.shopSettings.update({ where: { shop }, data: { currencyCode } });
+  return currencyCode;
+}
+
 export function dismissSetupGuide(shop) {
   const now = new Date();
   return db.shopSettings.upsert({

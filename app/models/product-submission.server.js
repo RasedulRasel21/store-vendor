@@ -59,23 +59,89 @@ function escapeHtml(value) {
     .replace(/"/g, "&quot;");
 }
 
+// Shopify's defaults for settings that older submissions didn't have.
+function withVariantDefaults(variant, submission) {
+  return {
+    optionValues: variant.optionValues ?? {},
+    imageUrl: variant.imageUrl ?? null,
+    price: variant.price ?? null,
+    compareAtPrice: variant.compareAtPrice ?? null,
+    costPerItem: variant.costPerItem ?? null,
+    taxable: variant.taxable ?? true,
+    sku: variant.sku ?? null,
+    barcode: variant.barcode ?? null,
+    trackInventory: variant.trackInventory ?? submission.trackInventory,
+    inventoryQuantity: Number.isInteger(variant.inventoryQuantity) ? variant.inventoryQuantity : null,
+    continueSelling: variant.continueSelling ?? false,
+    requiresShipping: variant.requiresShipping ?? true,
+    weight: variant.weight ?? null,
+    weightUnit: variant.weightUnit ?? "KILOGRAMS",
+    countryOfOrigin: variant.countryOfOrigin ?? null,
+    hsCode: variant.hsCode ?? null,
+  };
+}
+
 // New submissions store options and variants as JSON; the first portal version kept
 // a single variant's fields on the submission row.
 export function submissionVariants(submission) {
   if (Array.isArray(submission.variants) && submission.variants.length) {
-    return submission.variants;
+    return submission.variants.map((variant) => withVariantDefaults(variant, submission));
   }
   return [
-    {
-      optionValues: {},
-      price: submission.price === null ? null : submission.price.toFixed(2),
-      compareAtPrice:
-        submission.compareAtPrice === null ? null : submission.compareAtPrice.toFixed(2),
-      sku: submission.sku,
-      barcode: submission.barcode,
-      inventoryQuantity: submission.inventoryQuantity,
-    },
+    withVariantDefaults(
+      {
+        price: submission.price === null ? null : submission.price.toFixed(2),
+        compareAtPrice:
+          submission.compareAtPrice === null ? null : submission.compareAtPrice.toFixed(2),
+        sku: submission.sku,
+        barcode: submission.barcode,
+        inventoryQuantity: submission.inventoryQuantity,
+      },
+      submission,
+    ),
   ];
+}
+
+// Every per-variant setting, in productSet's shape. A variant image must be one of the
+// product images: Shopify then attaches the existing image instead of adding a copy.
+function variantInput(variant, options, submission, locationId) {
+  const tracked = variant.trackInventory && Boolean(locationId);
+  const inventoryItem = {
+    tracked,
+    requiresShipping: variant.requiresShipping,
+    ...(variant.sku ? { sku: variant.sku } : {}),
+    ...(variant.costPerItem ? { cost: variant.costPerItem } : {}),
+    ...(variant.requiresShipping && variant.weight
+      ? { measurement: { weight: { value: Number(variant.weight), unit: variant.weightUnit } } }
+      : {}),
+    ...(variant.countryOfOrigin ? { countryCodeOfOrigin: variant.countryOfOrigin } : {}),
+    ...(variant.hsCode ? { harmonizedSystemCode: variant.hsCode } : {}),
+  };
+
+  return {
+    optionValues: options.length
+      ? options.map((option) => ({
+          optionName: option.name,
+          name: variant.optionValues[option.name],
+        }))
+      : [{ optionName: "Title", name: "Default Title" }],
+    price: variant.price,
+    ...(variant.compareAtPrice ? { compareAtPrice: variant.compareAtPrice } : {}),
+    ...(variant.barcode ? { barcode: variant.barcode } : {}),
+    taxable: variant.taxable,
+    inventoryPolicy: variant.continueSelling ? "CONTINUE" : "DENY",
+    inventoryItem,
+    ...(tracked && Number.isInteger(variant.inventoryQuantity)
+      ? {
+          inventoryQuantities: [
+            { locationId, name: "available", quantity: variant.inventoryQuantity },
+          ],
+        }
+      : {}),
+    ...(variant.imageUrl && submission.imageUrls.includes(variant.imageUrl)
+      ? { file: { originalSource: variant.imageUrl, contentType: "IMAGE", alt: submission.title } }
+      : {}),
+  };
 }
 
 export function submissionOptions(submission) {
@@ -152,7 +218,6 @@ export async function approveProductSubmission(admin, shop, id, actor) {
       catalog.apps?.nodes?.some((app) => app.handle === ONLINE_STORE_APP_HANDLE),
     )?.publication?.id;
 
-    const tracked = submission.trackInventory && Boolean(locationId);
     const seo = {
       ...(submission.seoTitle ? { title: submission.seoTitle } : {}),
       ...(submission.seoDescription ? { description: submission.seoDescription } : {}),
@@ -185,25 +250,9 @@ export async function approveProductSubmission(admin, shop, id, actor) {
                 values: option.values.map((value) => ({ name: value })),
               }))
             : [{ name: "Title", values: [{ name: "Default Title" }] }],
-          variants: variants.map((variant) => ({
-            optionValues: options.length
-              ? options.map((option) => ({
-                  optionName: option.name,
-                  name: variant.optionValues[option.name],
-                }))
-              : [{ optionName: "Title", name: "Default Title" }],
-            price: variant.price,
-            ...(variant.compareAtPrice ? { compareAtPrice: variant.compareAtPrice } : {}),
-            ...(variant.barcode ? { barcode: variant.barcode } : {}),
-            inventoryItem: { ...(variant.sku ? { sku: variant.sku } : {}), tracked },
-            ...(tracked && Number.isInteger(variant.inventoryQuantity)
-              ? {
-                  inventoryQuantities: [
-                    { locationId, name: "available", quantity: variant.inventoryQuantity },
-                  ],
-                }
-              : {}),
-          })),
+          variants: variants.map((variant) =>
+            variantInput(variant, options, submission, locationId),
+          ),
           files: submission.imageUrls.map((url) => ({
             originalSource: url,
             contentType: "IMAGE",

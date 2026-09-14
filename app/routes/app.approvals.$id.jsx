@@ -11,20 +11,48 @@ import {
   submissionOptions,
   submissionVariants,
 } from "../models/product-submission.server";
+import { getShopSettings } from "../models/settings.server";
 import { sanitizeDescription } from "../utils/sanitize-description.server";
 import { formatDate, SUBMISSION_REVIEW_STATUS } from "../utils/vendor-display";
 
 const ACTOR = "merchant";
 
+const WEIGHT_UNIT_LABELS = { KILOGRAMS: "kg", GRAMS: "g", POUNDS: "lb", OUNCES: "oz" };
+
+function formatMoney(amount, currencyCode) {
+  if (!amount) return "—";
+  try {
+    return new Intl.NumberFormat("en", { style: "currency", currency: currencyCode }).format(
+      Number(amount),
+    );
+  } catch {
+    return `${amount} ${currencyCode}`;
+  }
+}
+
+function variantShipping(variant) {
+  if (!variant.requiresShipping) return "Not a physical product";
+  const parts = [
+    variant.weight ? `${variant.weight} ${WEIGHT_UNIT_LABELS[variant.weightUnit] ?? ""}`.trim() : null,
+    variant.countryOfOrigin ? `Origin ${variant.countryOfOrigin}` : null,
+    variant.hsCode ? `HS ${variant.hsCode}` : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : "—";
+}
+
 export const loader = async ({ request, params }) => {
   const { session } = await authenticate.admin(request);
-  const submission = await getProductSubmission(session.shop, params.id);
+  const [submission, settings] = await Promise.all([
+    getProductSubmission(session.shop, params.id),
+    getShopSettings(session.shop),
+  ]);
 
   if (!submission) {
     throw new Response("Product submission not found", { status: 404 });
   }
 
   return {
+    currencyCode: settings.currencyCode ?? "USD",
     submission: {
       id: submission.id,
       title: submission.title,
@@ -33,18 +61,11 @@ export const loader = async ({ request, params }) => {
         : descriptionToHtml(submission.description),
       options: submissionOptions(submission),
       variants: submissionVariants(submission),
-      trackInventory: submission.trackInventory,
       seoTitle: submission.seoTitle,
       seoDescription: submission.seoDescription,
       handle: submission.handle,
       productType: submission.productType,
       tags: submission.tags,
-      price: submission.price === null ? null : submission.price.toFixed(2),
-      compareAtPrice:
-        submission.compareAtPrice === null ? null : submission.compareAtPrice.toFixed(2),
-      sku: submission.sku,
-      barcode: submission.barcode,
-      inventoryQuantity: submission.inventoryQuantity,
       imageUrls: submission.imageUrls,
       status: submission.status,
       reviewNote: submission.reviewNote,
@@ -80,7 +101,7 @@ export const action = async ({ request, params }) => {
 };
 
 export default function ReviewProduct() {
-  const { submission } = useLoaderData();
+  const { submission, currencyCode } = useLoaderData();
   const fetcher = useFetcher();
   const shopify = useAppBridge();
   const [note, setNote] = useState("");
@@ -165,20 +186,6 @@ export default function ReviewProduct() {
           <s-stack direction="inline">
             <s-badge tone={status.tone}>{status.label}</s-badge>
           </s-stack>
-          <s-text color="subdued">Price</s-text>
-          <s-text>{submission.price ?? "Not set"}</s-text>
-          <s-text color="subdued">Compare-at price</s-text>
-          <s-text>{submission.compareAtPrice ?? "Not set"}</s-text>
-          <s-text color="subdued">SKU</s-text>
-          <s-text>{submission.sku ?? "Not set"}</s-text>
-          <s-text color="subdued">Barcode</s-text>
-          <s-text>{submission.barcode ?? "Not set"}</s-text>
-          <s-text color="subdued">Quantity</s-text>
-          <s-text>
-            {submission.inventoryQuantity === null
-              ? "Not set"
-              : String(submission.inventoryQuantity)}
-          </s-text>
           <s-text color="subdued">Product type</s-text>
           <s-text>{submission.productType ?? "Not set"}</s-text>
           <s-text color="subdued">Tags</s-text>
@@ -186,41 +193,66 @@ export default function ReviewProduct() {
         </s-grid>
       </s-section>
 
-      {submission.options.length > 0 && (
-        <s-section heading={`Variants (${submission.variants.length})`}>
-          <s-table>
-            <s-table-header-row>
-              <s-table-header listSlot="primary">Variant</s-table-header>
-              <s-table-header listSlot="labeled" format="numeric">
-                Price
-              </s-table-header>
-              <s-table-header listSlot="labeled">SKU</s-table-header>
-              <s-table-header listSlot="labeled" format="numeric">
-                Quantity
-              </s-table-header>
-            </s-table-header-row>
-            <s-table-body>
-              {submission.variants.map((variant) => {
-                const name = submission.options
-                  .map((option) => variant.optionValues[option.name])
-                  .join(" / ");
-                return (
-                  <s-table-row key={name}>
-                    <s-table-cell>{name}</s-table-cell>
-                    <s-table-cell>{variant.price ?? "—"}</s-table-cell>
-                    <s-table-cell>{variant.sku || "—"}</s-table-cell>
-                    <s-table-cell>
-                      {submission.trackInventory && Number.isInteger(variant.inventoryQuantity)
-                        ? String(variant.inventoryQuantity)
-                        : "—"}
-                    </s-table-cell>
-                  </s-table-row>
-                );
-              })}
-            </s-table-body>
-          </s-table>
-        </s-section>
-      )}
+      <s-section
+        heading={
+          submission.options.length
+            ? `Variants (${submission.variants.length})`
+            : "Pricing, inventory and shipping"
+        }
+      >
+        <s-table>
+          <s-table-header-row>
+            <s-table-header listSlot="primary">Variant</s-table-header>
+            <s-table-header listSlot="labeled" format="currency">
+              Price
+            </s-table-header>
+            <s-table-header listSlot="labeled" format="currency">
+              Compare-at
+            </s-table-header>
+            <s-table-header listSlot="labeled" format="currency">
+              Cost
+            </s-table-header>
+            <s-table-header listSlot="labeled">Tax</s-table-header>
+            <s-table-header listSlot="labeled">SKU / Barcode</s-table-header>
+            <s-table-header listSlot="labeled" format="numeric">
+              Available
+            </s-table-header>
+            <s-table-header listSlot="labeled">Shipping</s-table-header>
+          </s-table-header-row>
+          <s-table-body>
+            {submission.variants.map((variant, index) => {
+              const name = submission.options.length
+                ? submission.options.map((option) => variant.optionValues[option.name]).join(" / ")
+                : "Default";
+              return (
+                <s-table-row key={index}>
+                  <s-table-cell>
+                    <s-stack direction="inline" gap="small" alignItems="center">
+                      {variant.imageUrl && (
+                        <s-thumbnail src={variant.imageUrl} alt={name} size="small"></s-thumbnail>
+                      )}
+                      <s-text>{name}</s-text>
+                    </s-stack>
+                  </s-table-cell>
+                  <s-table-cell>{formatMoney(variant.price, currencyCode)}</s-table-cell>
+                  <s-table-cell>{formatMoney(variant.compareAtPrice, currencyCode)}</s-table-cell>
+                  <s-table-cell>{formatMoney(variant.costPerItem, currencyCode)}</s-table-cell>
+                  <s-table-cell>{variant.taxable ? "Charged" : "Not charged"}</s-table-cell>
+                  <s-table-cell>
+                    {[variant.sku, variant.barcode].filter(Boolean).join(" / ") || "—"}
+                  </s-table-cell>
+                  <s-table-cell>
+                    {variant.trackInventory
+                      ? `${variant.inventoryQuantity ?? 0}${variant.continueSelling ? " (keeps selling)" : ""}`
+                      : "Not tracked"}
+                  </s-table-cell>
+                  <s-table-cell>{variantShipping(variant)}</s-table-cell>
+                </s-table-row>
+              );
+            })}
+          </s-table-body>
+        </s-table>
+      </s-section>
 
       <s-section heading="Description">
         {submission.descriptionHtml ? (
