@@ -17,6 +17,7 @@ const ACTIVITY_LABELS = {
   "vendor.created": "Vendor added",
   "vendor.updated": "Details updated",
   "vendor.imported": "Imported from Shopify",
+  "vendor.commission_updated": "Commission changed",
   "vendor.approve": "Approved",
   "vendor.reject": "Rejected",
   "vendor.suspend": "Suspended",

@@ -34,6 +34,15 @@ model Session {
   refreshTokenExpires DateTime?
 }
 
+model ShopSettings {
+  shop              String   @id
+  // Default commission: a percentage of the line price plus a fixed amount per item.
+  commissionPercent Decimal  @default(10) @db.Decimal(5, 2)
+  commissionFixed   Decimal  @default(0) @db.Decimal(12, 2)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
 enum VendorStatus {
   PENDING
   ACTIVE
@@ -63,6 +72,10 @@ model Vendor {
   statusReason String?
   notes        String?
   approvedAt   DateTime?
+
+  // Null means the vendor uses the store's default commission.
+  commissionPercent Decimal? @db.Decimal(5, 2)
+  commissionFixed   Decimal? @db.Decimal(12, 2)
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 

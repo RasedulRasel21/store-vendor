@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import db from "../db.server";
+import { parseCommission } from "../utils/commission";
 import { VENDOR_STATUSES } from "../utils/vendor-display";
 
 const INVITE_TTL_DAYS = 7;
@@ -250,6 +251,37 @@ export async function updateVendor(shop, id, input, actor) {
   });
 
   return { vendor: updated, changed };
+}
+
+// useDefault clears the override so the store default applies.
+export async function updateVendorCommission(shop, id, { useDefault, percent, fixed }, actor) {
+  const vendor = await db.vendor.findFirst({ where: { id, shop } });
+  if (!vendor) return { error: "Vendor not found" };
+
+  let values = { commissionPercent: null, commissionFixed: null };
+  if (!useDefault) {
+    const result = parseCommission({ percent, fixed });
+    if (result.errors) return { errors: result.errors };
+    values = result.values;
+  }
+
+  await db.vendor.update({
+    where: { id: vendor.id },
+    data: {
+      ...values,
+      activities: {
+        create: {
+          action: "vendor.commission_updated",
+          actor,
+          details: useDefault
+            ? { useDefault: true }
+            : { percent: values.commissionPercent, fixed: values.commissionFixed },
+        },
+      },
+    },
+  });
+
+  return { ok: true };
 }
 
 export async function updateVendorNotes(shop, id, notes, actor) {

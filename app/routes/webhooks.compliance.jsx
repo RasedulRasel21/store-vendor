@@ -17,10 +17,18 @@ export const action = async ({ request }) => {
       // No customer data is stored yet. Once vendor orders exist, redact the
       // customer's personal data for payload.orders_to_redact.
       break;
-    case "SHOP_REDACT":
+    case "SHOP_REDACT": {
       // Sent 48 hours after uninstall: erase everything stored for this shop.
-      await db.session.deleteMany({ where: { shop: payload.shop_domain ?? shop } });
+      // Deleting vendors cascades to their users, product links and activity.
+      const shopDomain = payload.shop_domain ?? shop;
+      await db.$transaction([
+        db.vendorProduct.deleteMany({ where: { shop: shopDomain } }),
+        db.vendor.deleteMany({ where: { shop: shopDomain } }),
+        db.shopSettings.deleteMany({ where: { shop: shopDomain } }),
+        db.session.deleteMany({ where: { shop: shopDomain } }),
+      ]);
       break;
+    }
   }
 
   return new Response();

@@ -8,8 +8,11 @@ import {
   createOwnerInvite,
   getVendor,
   inviteUrl,
+  updateVendorCommission,
   updateVendorNotes,
 } from "../models/vendor.server";
+import { getShopCurrency, getShopSettings } from "../models/settings.server";
+import { effectiveCommission, formatCommission } from "../utils/commission";
 import {
   getVendorProducts,
   linkProducts,
@@ -32,6 +35,7 @@ const SUCCESS_MESSAGES = {
   notes: "Notes saved",
   invite: "Invite link created",
   "unlink-product": "Product unlinked",
+  commission: "Commission saved",
 };
 
 const PRODUCT_STATUS_LABEL = {
@@ -48,10 +52,27 @@ export const loader = async ({ request, params }) => {
     throw new Response("Vendor not found", { status: 404 });
   }
 
-  const products = await getVendorProducts(admin, session.shop, vendor.id);
+  const [products, settings, currencyCode] = await Promise.all([
+    getVendorProducts(admin, session.shop, vendor.id),
+    getShopSettings(session.shop),
+    getShopCurrency(admin),
+  ]);
+  const commission = effectiveCommission(vendor, settings);
 
   return {
     products,
+    currencyCode,
+    commission: {
+      ...commission,
+      label: formatCommission(commission, currencyCode),
+      defaultLabel: formatCommission(
+        {
+          percent: String(settings.commissionPercent),
+          fixed: String(settings.commissionFixed),
+        },
+        currencyCode,
+      ),
+    },
     // eslint-disable-next-line no-undef
     portalConfigured: Boolean(process.env.VENDOR_PORTAL_URL),
     vendor: {
@@ -120,6 +141,23 @@ export const action = async ({ request, params }) => {
         inviteUrl: inviteUrl(result.inviteToken),
       };
     }
+    case "commission": {
+      const result = await updateVendorCommission(
+        session.shop,
+        params.id,
+        {
+          useDefault: formData.get("useDefault") === "on",
+          percent: formData.get("percent"),
+          fixed: formData.get("fixed"),
+        },
+        ACTOR,
+      );
+      return {
+        intent,
+        error: result.error ?? null,
+        fieldErrors: result.errors ?? null,
+      };
+    }
     case "link-products": {
       let productIds = [];
       try {
@@ -153,7 +191,11 @@ export const action = async ({ request, params }) => {
 };
 
 export default function VendorDetail() {
-  const { vendor, products, portalConfigured } = useLoaderData();
+  const { vendor, products, commission, currencyCode, portalConfigured } =
+    useLoaderData();
+  const [useDefaultCommission, setUseDefaultCommission] = useState(
+    !commission.custom,
+  );
   const fetcher = useFetcher();
   const shopify = useAppBridge();
   const [rejectReason, setRejectReason] = useState("");
@@ -171,7 +213,7 @@ export default function VendorDetail() {
   const canReactivate = vendor.status === "SUSPENDED";
 
   useEffect(() => {
-    if (!result || result.error) return;
+    if (!result || result.error || result.fieldErrors) return;
 
     if (result.intent === "link-products") {
       const noun = result.linked === 1 ? "product" : "products";
@@ -300,6 +342,67 @@ export default function VendorDetail() {
           <s-text color="subdued">Approved</s-text>
           <s-text>{vendor.approvedAt ?? "Not approved"}</s-text>
         </s-grid>
+      </s-section>
+
+      <s-section heading="Commission">
+        <fetcher.Form method="post">
+          <input type="hidden" name="intent" value="commission" />
+          <s-stack direction="block" gap="base">
+            <s-paragraph>
+              {commission.custom
+                ? `This vendor has a custom commission of ${commission.label}.`
+                : `This vendor uses the store default of ${commission.defaultLabel}.`}
+            </s-paragraph>
+            <s-checkbox
+              name="useDefault"
+              value="on"
+              label="Use the store default commission"
+              details="You can change the default in Settings."
+              checked={useDefaultCommission}
+              onChange={(event) =>
+                setUseDefaultCommission(event.currentTarget.checked)
+              }
+            ></s-checkbox>
+            {!useDefaultCommission && (
+              <s-grid gridTemplateColumns="1fr 1fr" gap="base">
+                <s-number-field
+                  label="Percentage"
+                  name="percent"
+                  suffix="%"
+                  inputMode="decimal"
+                  step={0.01}
+                  min={0}
+                  max={100}
+                  defaultValue={commission.percent}
+                  error={
+                    result?.intent === "commission"
+                      ? result.fieldErrors?.percent
+                      : undefined
+                  }
+                ></s-number-field>
+                <s-number-field
+                  label="Fixed amount per item"
+                  name="fixed"
+                  suffix={currencyCode}
+                  inputMode="decimal"
+                  step={0.01}
+                  min={0}
+                  defaultValue={commission.fixed}
+                  error={
+                    result?.intent === "commission"
+                      ? result.fieldErrors?.fixed
+                      : undefined
+                  }
+                ></s-number-field>
+              </s-grid>
+            )}
+            <s-stack direction="inline">
+              <s-button type="submit" loading={busyIntent === "commission"}>
+                Save commission
+              </s-button>
+            </s-stack>
+          </s-stack>
+        </fetcher.Form>
       </s-section>
 
       <s-section heading="Products">
