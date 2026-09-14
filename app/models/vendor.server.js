@@ -88,7 +88,7 @@ export async function listVendors(shop, { status } = {}) {
 }
 
 export async function getVendorOverview(shop) {
-  const [counts, linkedProducts, invitedVendors, pending] = await Promise.all([
+  const [counts, linkedProducts, invitedVendors, pending, productsToReview] = await Promise.all([
     countVendorsByStatus(shop),
     db.vendorProduct.count({ where: { shop } }),
     db.vendor.count({
@@ -102,11 +102,12 @@ export async function getVendorOverview(shop) {
       orderBy: { createdAt: "asc" },
       take: 5,
     }),
+    db.productSubmission.count({ where: { shop, status: "PENDING" } }),
   ]);
 
   const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
 
-  return { counts, total, linkedProducts, invitedVendors, pending };
+  return { counts, total, linkedProducts, invitedVendors, pending, productsToReview };
 }
 
 export function getVendor(shop, id) {

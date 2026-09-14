@@ -42,6 +42,7 @@ export default function Index() {
     linkedProducts,
     invitedVendors,
     pending,
+    productsToReview,
     setupGuideDismissed,
   } = useLoaderData();
   const fetcher = useFetcher();
@@ -83,6 +84,11 @@ export default function Index() {
       label: "Awaiting approval",
       value: counts.PENDING ?? 0,
       href: "/app/vendors?status=PENDING",
+    },
+    {
+      label: "Products to review",
+      value: productsToReview,
+      href: "/app/approvals",
     },
     {
       label: "Suspended",

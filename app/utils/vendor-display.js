@@ -20,6 +20,15 @@ export const SHIPPING_MODE = {
 
 export const SHIPPING_MODES = Object.keys(SHIPPING_MODE);
 
+// Merchants only see submissions once a vendor submits them, so drafts aren't listed.
+export const SUBMISSION_REVIEW_STATUS = {
+  PENDING: { label: "Awaiting approval", tone: "warning" },
+  APPROVED: { label: "Approved", tone: "success" },
+  REJECTED: { label: "Changes requested", tone: "critical" },
+};
+
+export const SUBMISSION_REVIEW_STATUSES = Object.keys(SUBMISSION_REVIEW_STATUS);
+
 export const VENDOR_USER_STATUS = {
   INVITED: { label: "Invited", tone: "info" },
   ACTIVE: { label: "Active", tone: "success" },
@@ -34,6 +43,8 @@ const ACTIVITY_LABELS = {
   "vendor.fulfillment_updated": "Shipping and COD changed",
   "vendor_user.invite_accepted": "Portal invite accepted",
   "product.submitted": "Product submitted for approval",
+  "product.approved": "Product approved",
+  "product.rejected": "Product changes requested",
   "vendor.approve": "Approved",
   "vendor.reject": "Rejected",
   "vendor.suspend": "Suspended",
