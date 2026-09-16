@@ -733,7 +733,16 @@ export async function recordStoreFulfillment(shop, orderGid, { fulfillmentId, tr
 
 // Ships a vendor's lines in Shopify. Called by the vendor portal through /api/portal/fulfill,
 // because the portal has no Shopify access of its own.
-export async function fulfillVendorOrder(vendorOrderId, vendorId, tracking, requestedItems = []) {
+// actor is "vendor" when this comes from the portal, or "store" when the merchant ships on a
+// vendor's behalf: the merchant can ship either way, a vendor only their own orders.
+export async function fulfillVendorOrder(
+  vendorOrderId,
+  vendorId,
+  tracking,
+  requestedItems = [],
+  actor = "vendor",
+) {
+  const byStore = actor === "store";
   const vendorOrder = await db.vendorOrder.findFirst({
     where: { id: vendorOrderId, vendorId },
     include: { lines: true },
@@ -741,7 +750,7 @@ export async function fulfillVendorOrder(vendorOrderId, vendorId, tracking, requ
   if (!vendorOrder) return { error: "Order not found" };
   if (vendorOrder.status === "CANCELLED") return { error: "This order was cancelled" };
   if (vendorOrder.status === "FULFILLED") return { error: "This order is already marked shipped" };
-  if (vendorOrder.shippingMode === "STORE_SHIPS") {
+  if (!byStore && vendorOrder.shippingMode === "STORE_SHIPS") {
     return { error: "The store ships this order, so it can't be shipped from the portal." };
   }
 
@@ -777,7 +786,11 @@ export async function fulfillVendorOrder(vendorOrderId, vendorId, tracking, requ
   if (tracking.company) {
     const allowed = await allowedCarrierNames(vendorOrder.shop);
     if (!allowed.has(tracking.company.toLowerCase())) {
-      return { error: `${tracking.company} isn't on the store's courier list. Ask the store to add it.` };
+      return {
+        error: byStore
+          ? `${tracking.company} isn't on your courier list. Add it in Settings first.`
+          : `${tracking.company} isn't on the store's courier list. Ask the store to add it.`,
+      };
     }
   }
 
@@ -824,14 +837,14 @@ export async function fulfillVendorOrder(vendorOrderId, vendorId, tracking, requ
     fulfillmentId: fulfillment.id,
     tracking,
     items: shipping.map(({ line, quantity }) => ({ lineId: line.id, quantity })),
-    shippedBy: "vendor",
+    shippedBy: byStore ? "store" : "vendor",
   });
 
   await db.vendorActivity.create({
     data: {
       vendorId: vendorOrder.vendorId,
       action: status === "FULFILLED" ? "order.fulfilled" : "order.partly_fulfilled",
-      actor: "vendor",
+      actor: byStore ? "merchant" : "vendor",
       details: { orderName: vendorOrder.orderName, tracking: tracking.number || null },
     },
   });

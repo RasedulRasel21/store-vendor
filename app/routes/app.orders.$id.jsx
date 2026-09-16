@@ -1,8 +1,11 @@
-import { Form, useLoaderData, useNavigation } from "react-router";
+import { useEffect } from "react";
+import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
+import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { reasonLabel, resolveIssue } from "../models/order-issue.server";
-import { getVendorOrder, orderTimeline } from "../models/vendor-order.server";
+import { carrierChoices } from "../models/carrier.server";
+import { fulfillVendorOrder, getVendorOrder, orderTimeline } from "../models/vendor-order.server";
 import { RETURN_STATUS } from "../models/vendor-return.server";
 import { formatMoney } from "../utils/money";
 import { formatDate, formatDateTime, VENDOR_ORDER_STATUS } from "../utils/vendor-display";
@@ -18,8 +21,21 @@ export const loader = async ({ request, params }) => {
   const currency = vendorOrder.currencyCode;
   const address = vendorOrder.shippingAddress;
 
+  // What's left to send decides whether the merchant can ship on the vendor's behalf.
+  const remaining = vendorOrder.lines.reduce(
+    (sum, line) => sum + Math.max(0, line.quantity - line.refundedQuantity - line.shippedQuantity),
+    0,
+  );
+  const canShip = ["OPEN", "PARTIAL"].includes(vendorOrder.status) && remaining > 0;
+  const carriers = canShip ? await carrierChoices(session.shop) : null;
+
   return {
+    carriers: carriers
+      ? [...new Set([...carriers.approved.map((carrier) => carrier.name), ...carriers.fromShopify])]
+      : [],
     order: {
+      canShip,
+      remaining,
       id: vendorOrder.id,
       orderName: vendorOrder.orderName,
       orderNumericId: vendorOrder.orderId.split("/").pop(),
@@ -101,25 +117,55 @@ export const loader = async ({ request, params }) => {
   };
 };
 
-export const action = async ({ request }) => {
+export const action = async ({ request, params }) => {
   const { session } = await authenticate.admin(request);
   const formData = await request.formData();
+  const intent = String(formData.get("intent") ?? "");
 
-  if (formData.get("intent") !== "resolveIssue") return { error: "Unknown action" };
+  if (intent === "resolveIssue") {
+    const result = await resolveIssue(
+      session.shop,
+      String(formData.get("issueId") ?? ""),
+      String(formData.get("note") ?? ""),
+      "merchant",
+    );
+    return { intent, error: result.error ?? null };
+  }
 
-  const result = await resolveIssue(
-    session.shop,
-    String(formData.get("issueId") ?? ""),
-    String(formData.get("note") ?? ""),
-    "merchant",
-  );
-  return { error: result.error ?? null };
+  if (intent === "ship") {
+    // Checked against this shop first, so one merchant can't fulfill another's order.
+    const vendorOrder = await getVendorOrder(session.shop, params.id);
+    if (!vendorOrder) return { intent, error: "Order not found" };
+
+    const result = await fulfillVendorOrder(
+      vendorOrder.id,
+      vendorOrder.vendorId,
+      {
+        number: String(formData.get("trackingNumber") ?? "").trim().slice(0, 100),
+        company: String(formData.get("trackingCompany") ?? "").trim().slice(0, 100),
+        url: String(formData.get("trackingUrl") ?? "").trim().slice(0, 500),
+      },
+      [],
+      "store",
+    );
+    return { intent, error: result.error ?? null, shipped: Boolean(result.ok) };
+  }
+
+  return { intent, error: "Unknown action" };
 };
 
 export default function VendorOrderDetail() {
-  const { order } = useLoaderData();
+  const { order, carriers } = useLoaderData();
+  const actionData = useActionData();
   const navigation = useNavigation();
+  const shopify = useAppBridge();
+  const submittingIntent = navigation.state === "submitting" ? navigation.formData?.get("intent") : null;
+  const shipping = submittingIntent === "ship";
   const status = VENDOR_ORDER_STATUS[order.status];
+
+  useEffect(() => {
+    if (actionData?.shipped) shopify.toast.show("Marked shipped, and the customer has been emailed");
+  }, [actionData, shopify]);
 
   return (
     <s-page heading={`${order.orderName} · ${order.vendor.name}`}>
@@ -154,7 +200,7 @@ export default function VendorOrderDetail() {
                   name="note"
                   placeholder="Refunded the customer and cancelled the item"
                 ></s-text-field>
-                <s-button type="submit" variant="primary" loading={navigation.state === "submitting"}>
+                <s-button type="submit" variant="primary" loading={submittingIntent === "resolveIssue"}>
                   Close request
                 </s-button>
               </s-grid>
@@ -248,6 +294,48 @@ export default function VendorOrderDetail() {
             : "Shipping goes to the vendor only when the whole order is theirs and they ship it themselves. Payouts of these earnings come next."}
         </s-paragraph>
       </s-section>
+
+      {order.canShip && (
+        <s-section heading="Ship for the vendor">
+          <s-stack direction="block" gap="base">
+            <s-paragraph color="subdued">
+              {order.shippingMode === "STORE_SHIPS"
+                ? `You ship this order. Marking it shipped here sends the customer their tracking and credits ${order.vendor.name}.`
+                : `${order.vendor.name} ships this one themselves. Do it for them if they can't, and the customer gets the tracking as usual.`}
+            </s-paragraph>
+            {actionData?.intent === "ship" && actionData.error && (
+              <s-banner tone="critical">{actionData.error}</s-banner>
+            )}
+            <Form method="post">
+              <input type="hidden" name="intent" value="ship" />
+              <s-stack direction="block" gap="base">
+                <s-grid gridTemplateColumns="minmax(0,1fr) minmax(0,1fr)" gap="base">
+                  <s-select label="Courier" name="trackingCompany" placeholder="No courier">
+                    <s-option value="">No courier</s-option>
+                    {carriers.map((carrier) => (
+                      <s-option key={carrier} value={carrier}>
+                        {carrier}
+                      </s-option>
+                    ))}
+                  </s-select>
+                  <s-text-field label="Tracking number" name="trackingNumber" placeholder="Optional"></s-text-field>
+                </s-grid>
+                <s-text-field
+                  label="Tracking link"
+                  name="trackingUrl"
+                  placeholder="https://"
+                  details="Leave empty for couriers Shopify tracks; it builds the link from the number."
+                ></s-text-field>
+                <s-stack direction="inline">
+                  <s-button type="submit" variant="primary" loading={shipping}>
+                    {`Mark ${order.remaining} ${order.remaining === 1 ? "item" : "items"} shipped`}
+                  </s-button>
+                </s-stack>
+              </s-stack>
+            </Form>
+          </s-stack>
+        </s-section>
+      )}
 
       {order.returns.length > 0 && (
         <s-section heading="Returns">
