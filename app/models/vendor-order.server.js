@@ -1,4 +1,5 @@
 import db from "../db.server";
+import { unauthenticated } from "../shopify.server";
 import { getShopSettings } from "./settings.server";
 import { effectiveCommission } from "../utils/commission";
 import { round2 } from "../utils/money";
@@ -84,6 +85,20 @@ const ORDER_FOR_SPLIT = `#graphql
             }
           }
         }
+      }
+    }
+  }`;
+
+const CREATE_FULFILLMENT = `#graphql
+  mutation ShipVendorLines($fulfillment: FulfillmentInput!) {
+    fulfillmentCreate(fulfillment: $fulfillment) {
+      fulfillment {
+        id
+        status
+      }
+      userErrors {
+        field
+        message
       }
     }
   }`;
@@ -293,6 +308,74 @@ export async function syncFulfilledVendorOrders(shop, orderGid, fulfilledLineIte
       data: { status: "FULFILLED", fulfilledAt: now },
     });
   }
+}
+
+// Ships a vendor's lines in Shopify. Called by the vendor portal through /api/portal/fulfill,
+// because the portal has no Shopify access of its own.
+export async function fulfillVendorOrder(vendorOrderId, vendorId, tracking) {
+  const vendorOrder = await db.vendorOrder.findFirst({
+    where: { id: vendorOrderId, vendorId },
+    include: { lines: true },
+  });
+  if (!vendorOrder) return { error: "Order not found" };
+  if (vendorOrder.status === "CANCELLED") return { error: "This order was cancelled" };
+  if (vendorOrder.status === "FULFILLED") return { error: "This order is already marked shipped" };
+
+  // Shopify groups the lines to ship by fulfillment order.
+  const byFulfillmentOrder = new Map();
+  for (const line of vendorOrder.lines) {
+    if (!line.fulfillmentOrderId || !line.fulfillmentOrderLineItemId || line.fulfillableQuantity <= 0) continue;
+    const items = byFulfillmentOrder.get(line.fulfillmentOrderId) ?? [];
+    items.push({ id: line.fulfillmentOrderLineItemId, quantity: line.fulfillableQuantity });
+    byFulfillmentOrder.set(line.fulfillmentOrderId, items);
+  }
+  if (!byFulfillmentOrder.size) {
+    return { error: "These items can't be shipped from here. The store may have shipped them already." };
+  }
+
+  const trackingInfo = {
+    ...(tracking.number ? { number: tracking.number } : {}),
+    ...(tracking.company ? { company: tracking.company } : {}),
+    ...(tracking.url ? { url: tracking.url } : {}),
+  };
+
+  const { admin } = await unauthenticated.admin(vendorOrder.shop);
+  const response = await admin.graphql(CREATE_FULFILLMENT, {
+    variables: {
+      fulfillment: {
+        lineItemsByFulfillmentOrder: [...byFulfillmentOrder].map(([fulfillmentOrderId, fulfillmentOrderLineItems]) => ({
+          fulfillmentOrderId,
+          fulfillmentOrderLineItems,
+        })),
+        ...(Object.keys(trackingInfo).length ? { trackingInfo } : {}),
+        notifyCustomer: true,
+      },
+    },
+  });
+  const { data } = await response.json();
+
+  if (!data?.fulfillmentCreate?.fulfillment) {
+    const message = data?.fulfillmentCreate?.userErrors?.[0]?.message;
+    return { error: message ?? "Shopify couldn't mark these items shipped. Try again." };
+  }
+
+  const now = new Date();
+  await db.$transaction([
+    db.vendorOrder.update({
+      where: { id: vendorOrder.id },
+      data: { status: "FULFILLED", fulfilledAt: now },
+    }),
+    db.vendorActivity.create({
+      data: {
+        vendorId: vendorOrder.vendorId,
+        action: "order.fulfilled",
+        actor: "vendor",
+        details: { orderName: vendorOrder.orderName, tracking: tracking.number ?? null },
+      },
+    }),
+  ]);
+
+  return { ok: true };
 }
 
 export async function listVendorOrders(shop, { status, vendorId }) {
