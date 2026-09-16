@@ -673,16 +673,29 @@ export async function fulfillVendorOrder(vendorOrderId, vendorId, tracking, requ
   return { ok: true, status };
 }
 
-export async function listVendorOrders(shop, { status, vendorId }) {
-  const where = {
+export function vendorOrderFilter(shop, { status, vendorId, query }) {
+  const search = query?.trim();
+
+  return {
     shop,
     ...(VENDOR_ORDER_STATUSES.includes(status) ? { status } : {}),
     ...(vendorId ? { vendorId } : {}),
+    ...(search
+      ? {
+          OR: [
+            { orderName: { contains: search, mode: "insensitive" } },
+            { customerName: { contains: search, mode: "insensitive" } },
+            { customerEmail: { contains: search, mode: "insensitive" } },
+          ],
+        }
+      : {}),
   };
+}
 
-  const [orders, grouped] = await Promise.all([
+export async function listVendorOrders(shop, filters) {
+  const [orders, grouped, vendors] = await Promise.all([
     db.vendorOrder.findMany({
-      where,
+      where: vendorOrderFilter(shop, filters),
       orderBy: { placedAt: "desc" },
       take: 100,
       include: {
@@ -691,12 +704,29 @@ export async function listVendorOrders(shop, { status, vendorId }) {
       },
     }),
     db.vendorOrder.groupBy({ by: ["status"], where: { shop }, _count: { _all: true } }),
+    // Only vendors that actually have orders are worth filtering by.
+    db.vendor.findMany({
+      where: { shop, orders: { some: {} } },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
   ]);
 
   return {
     orders,
+    vendors,
     counts: Object.fromEntries(grouped.map((row) => [row.status, row._count._all])),
   };
+}
+
+// Rows for the CSV export, capped so one click can't pull a whole year at once.
+export function vendorOrdersForExport(shop, filters) {
+  return db.vendorOrder.findMany({
+    where: vendorOrderFilter(shop, filters),
+    orderBy: { placedAt: "desc" },
+    take: 1000,
+    include: { vendor: { select: { name: true } } },
+  });
 }
 
 export function getVendorOrder(shop, id) {
