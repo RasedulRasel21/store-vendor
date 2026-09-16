@@ -145,6 +145,9 @@ model VendorOrder {
   orderId         String
   orderName       String
   currencyCode    String
+  // Who ships this order, copied from the vendor when the order came in, so changing
+  // the vendor's setting later doesn't rewrite past orders.
+  shippingMode    ShippingMode @default(VENDOR_SHIPS)
   financialStatus String?
   customerName    String?
   customerEmail   String?

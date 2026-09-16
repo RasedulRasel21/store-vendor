@@ -41,10 +41,10 @@ export const loader = async ({ request, params }) => {
       commission: formatMoney(vendorOrder.commission, currency),
       shipping: formatMoney(vendorOrder.shipping, currency),
       earnings: formatMoney(vendorOrder.earnings, currency),
+      shippingMode: vendorOrder.shippingMode,
       vendor: {
         id: vendorOrder.vendor.id,
         name: vendorOrder.vendor.name,
-        shippingMode: vendorOrder.vendor.shippingMode,
       },
       lines: vendorOrder.lines.map((line) => ({
         id: line.id,
@@ -158,7 +158,7 @@ export default function VendorOrderDetail() {
           </s-stack>
           <s-link href={`/app/vendors/${order.vendor.id}`}>{order.vendor.name}</s-link>
           <s-text color="subdued">
-            {order.vendor.shippingMode === "VENDOR_SHIPS" ? "Vendor ships" : "Store ships"}
+            {order.shippingMode === "VENDOR_SHIPS" ? "Vendor ships" : "Store ships"}
           </s-text>
           {order.financialStatus && <s-text color="subdued">{`Payment: ${order.financialStatus}`}</s-text>}
           <s-text color="subdued">{`Placed ${order.placedAt ?? "—"}`}</s-text>

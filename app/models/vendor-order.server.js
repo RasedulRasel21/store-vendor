@@ -226,6 +226,7 @@ export async function splitOrder(admin, shop, orderGid) {
       status: "OPEN",
       orderName: order.name,
       currencyCode: order.currencyCode,
+      shippingMode: vendor.shippingMode,
       financialStatus: order.displayFinancialStatus ?? null,
       customerName: order.customer?.displayName ?? address?.name ?? null,
       customerEmail: order.email ?? null,
@@ -320,6 +321,9 @@ export async function fulfillVendorOrder(vendorOrderId, vendorId, tracking) {
   if (!vendorOrder) return { error: "Order not found" };
   if (vendorOrder.status === "CANCELLED") return { error: "This order was cancelled" };
   if (vendorOrder.status === "FULFILLED") return { error: "This order is already marked shipped" };
+  if (vendorOrder.shippingMode === "STORE_SHIPS") {
+    return { error: "The store ships this order, so it can't be shipped from the portal." };
+  }
 
   // Shopify groups the lines to ship by fulfillment order.
   const byFulfillmentOrder = new Map();
