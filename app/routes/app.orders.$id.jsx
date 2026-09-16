@@ -41,6 +41,11 @@ export const loader = async ({ request, params }) => {
       commission: formatMoney(vendorOrder.commission, currency),
       shipping: formatMoney(vendorOrder.shipping, currency),
       earnings: formatMoney(vendorOrder.earnings, currency),
+      isRefunded: Number(vendorOrder.refunded) > 0,
+      refunded: formatMoney(vendorOrder.refunded, currency),
+      refundedCommission: formatMoney(vendorOrder.refundedCommission, currency),
+      payable: formatMoney(Number(vendorOrder.earnings) - Number(vendorOrder.refundedEarnings), currency),
+      paidAt: formatDate(vendorOrder.paidAt),
       shippingMode: vendorOrder.shippingMode,
       vendor: {
         id: vendorOrder.vendor.id,
@@ -131,12 +136,21 @@ export default function VendorOrderDetail() {
           <s-text>{order.commission}</s-text>
           <s-text color="subdued">Shipping to vendor</s-text>
           <s-text>{order.shipping}</s-text>
+          {order.isRefunded && (
+            <>
+              <s-text color="subdued">Refunded to customer</s-text>
+              <s-text>{order.refunded}</s-text>
+              <s-text color="subdued">Commission reversed</s-text>
+              <s-text>{order.refundedCommission}</s-text>
+            </>
+          )}
           <s-text color="subdued">Vendor earns</s-text>
-          <s-text type="strong">{order.earnings}</s-text>
+          <s-text type="strong">{order.isRefunded ? order.payable : order.earnings}</s-text>
         </s-grid>
         <s-paragraph color="subdued">
-          Shipping goes to the vendor only when the whole order is theirs and they ship it
-          themselves. Payouts of these earnings come next.
+          {order.isRefunded
+            ? `Before refunds the vendor earned ${order.earnings}. Refunds reverse their share and your commission on the refunded items.`
+            : "Shipping goes to the vendor only when the whole order is theirs and they ship it themselves. Payouts of these earnings come next."}
         </s-paragraph>
       </s-section>
 
@@ -160,7 +174,11 @@ export default function VendorOrderDetail() {
           <s-text color="subdued">
             {order.shippingMode === "VENDOR_SHIPS" ? "Vendor ships" : "Store ships"}
           </s-text>
-          {order.financialStatus && <s-text color="subdued">{`Payment: ${order.financialStatus}`}</s-text>}
+          {order.financialStatus && (
+            <s-text color="subdued">
+              {`Payment: ${order.financialStatus}${order.paidAt ? ` · paid ${order.paidAt}` : ""}`}
+            </s-text>
+          )}
           <s-text color="subdued">{`Placed ${order.placedAt ?? "—"}`}</s-text>
           {order.fulfilledAt && <s-text color="subdued">{`Shipped ${order.fulfilledAt}`}</s-text>}
         </s-stack>

@@ -166,7 +166,13 @@ model VendorOrder {
   shipping   Decimal @default(0) @db.Decimal(12, 2)
   earnings   Decimal @db.Decimal(12, 2)
 
+  // Refunds reverse part of the sale. Payable earnings are earnings minus refundedEarnings.
+  refunded           Decimal @default(0) @db.Decimal(12, 2)
+  refundedCommission Decimal @default(0) @db.Decimal(12, 2)
+  refundedEarnings   Decimal @default(0) @db.Decimal(12, 2)
+
   placedAt    DateTime
+  paidAt      DateTime?
   fulfilledAt DateTime?
   cancelledAt DateTime?
   createdAt   DateTime @default(now())
@@ -196,6 +202,9 @@ model VendorOrderLine {
   subtotal   Decimal @db.Decimal(12, 2)
   commission Decimal @db.Decimal(12, 2)
   earnings   Decimal @db.Decimal(12, 2)
+
+  refundedQuantity Int     @default(0)
+  refundedSubtotal Decimal @default(0) @db.Decimal(12, 2)
 
   // Needed to fulfil this line later.
   fulfillmentOrderId         String?

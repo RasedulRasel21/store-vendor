@@ -25,8 +25,13 @@ export const loader = async ({ request }) => {
       vendorName: order.vendor.name,
       vendorId: order.vendor.id,
       itemCount: order._count.lines,
-      earnings: formatMoney(order.earnings, order.currencyCode),
-      commission: formatMoney(order.commission, order.currencyCode),
+      // What's actually payable: refunded items are taken back off both sides.
+      earnings: formatMoney(Number(order.earnings) - Number(order.refundedEarnings), order.currencyCode),
+      commission: formatMoney(
+        Number(order.commission) - Number(order.refundedCommission),
+        order.currencyCode,
+      ),
+      isRefunded: Number(order.refunded) > 0,
       status: order.status,
       placedAt: formatDate(order.placedAt),
     })),
@@ -79,7 +84,10 @@ export default function Orders() {
               {orders.map((order) => (
                 <s-table-row key={order.id}>
                   <s-table-cell>
-                    <s-link href={`/app/orders/${order.id}`}>{order.orderName}</s-link>
+                    <s-stack direction="inline" gap="small" alignItems="center">
+                      <s-link href={`/app/orders/${order.id}`}>{order.orderName}</s-link>
+                      {order.isRefunded && <s-badge tone="warning">Refunded</s-badge>}
+                    </s-stack>
                   </s-table-cell>
                   <s-table-cell>{order.vendorName}</s-table-cell>
                   <s-table-cell>{String(order.itemCount)}</s-table-cell>

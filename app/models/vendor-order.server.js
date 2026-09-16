@@ -103,6 +103,9 @@ const CREATE_FULFILLMENT = `#graphql
     }
   }`;
 
+// Money has been collected for these, so the vendor's earnings can be paid out.
+const PAID_STATUSES = ["PAID", "PARTIALLY_REFUNDED", "REFUNDED"];
+
 function money(node) {
   return Number(node?.shopMoney?.amount ?? 0);
 }
@@ -248,20 +251,59 @@ export async function splitOrder(admin, shop, orderGid) {
       shipping: shipping.toFixed(2),
       earnings: round2(subtotal - commission + shipping).toFixed(2),
       placedAt,
+      paidAt: PAID_STATUSES.includes(order.displayFinancialStatus) ? new Date() : null,
     };
 
     await db.$transaction(async (tx) => {
       const existing = await tx.vendorOrder.findUnique({
         where: { shop_orderId_vendorId: { shop, orderId: order.id, vendorId: vendor.id } },
-        select: { id: true, status: true },
+        select: {
+          id: true,
+          status: true,
+          paidAt: true,
+          lines: { select: { lineItemId: true, refundedQuantity: true, refundedSubtotal: true } },
+        },
       });
 
       if (existing) {
+        // Lines are rebuilt from Shopify, so refunds already recorded are carried over.
+        const refundsByLine = new Map(existing.lines.map((line) => [line.lineItemId, line]));
+        const keptLines = lines.map((line) => {
+          const refund = refundsByLine.get(line.lineItemId);
+          if (!refund) return line;
+          const refundedSubtotal = Math.min(Number(line.subtotal), Number(refund.refundedSubtotal));
+          return {
+            ...line,
+            refundedQuantity: Math.min(line.quantity, refund.refundedQuantity),
+            refundedSubtotal: refundedSubtotal.toFixed(2),
+          };
+        });
+
+        const refunded = round2(
+          keptLines.reduce((sum, line) => sum + Number(line.refundedSubtotal ?? 0), 0),
+        );
+        const refundedCommission = round2(
+          keptLines.reduce((sum, line) => {
+            const refundedSubtotal = Number(line.refundedSubtotal ?? 0);
+            if (!refundedSubtotal) return sum;
+            const share = Number(line.subtotal) > 0 ? refundedSubtotal / Number(line.subtotal) : 1;
+            return sum + Number(line.commission) * share;
+          }, 0),
+        );
+
         await tx.vendorOrderLine.deleteMany({ where: { vendorOrderId: existing.id } });
         await tx.vendorOrder.update({
           where: { id: existing.id },
           // A vendor order already fulfilled or cancelled keeps its status.
-          data: { ...record, status: existing.status, lines: { create: lines } },
+          data: {
+            ...record,
+            status: existing.status,
+            paidAt: existing.paidAt ?? record.paidAt,
+            refunded: refunded.toFixed(2),
+            refundedCommission: refundedCommission.toFixed(2),
+            refundedEarnings: round2(refunded - refundedCommission).toFixed(2),
+            lines: { create: keptLines },
+          },
         });
         return;
       }
@@ -281,6 +323,94 @@ export async function splitOrder(admin, shop, orderGid) {
   }
 
   return { vendorOrders: groups.size };
+}
+
+// A refund reverses part of a sale: the vendor's share of the refunded lines, and the
+// commission taken on them, so payouts only pay for goods the customer kept.
+export async function applyRefund(shop, orderGid, refundLines) {
+  if (!refundLines.length) return;
+
+  const vendorOrders = await db.vendorOrder.findMany({
+    where: { shop, orderId: orderGid },
+    include: { lines: true },
+  });
+  if (!vendorOrders.length) return;
+
+  for (const vendorOrder of vendorOrders) {
+    const updates = [];
+
+    for (const line of vendorOrder.lines) {
+      const refunds = refundLines.filter((refund) => refund.lineItemId === line.lineItemId);
+      if (!refunds.length) continue;
+
+      const quantity = refunds.reduce((sum, refund) => sum + refund.quantity, 0);
+      const amount = refunds.reduce((sum, refund) => sum + refund.subtotal, 0);
+      updates.push({
+        id: line.id,
+        refundedQuantity: Math.min(line.quantity, line.refundedQuantity + quantity),
+        refundedSubtotal: Math.min(Number(line.subtotal), round2(Number(line.refundedSubtotal) + amount)),
+      });
+    }
+
+    if (!updates.length) continue;
+
+    const byId = new Map(updates.map((update) => [update.id, update]));
+    let refunded = 0;
+    let refundedCommission = 0;
+
+    for (const line of vendorOrder.lines) {
+      const update = byId.get(line.id);
+      const refundedSubtotal = update ? update.refundedSubtotal : Number(line.refundedSubtotal);
+      if (!refundedSubtotal) continue;
+
+      // Commission comes back in the same proportion as the money refunded.
+      const share = Number(line.subtotal) > 0 ? refundedSubtotal / Number(line.subtotal) : 1;
+      refunded = round2(refunded + refundedSubtotal);
+      refundedCommission = round2(refundedCommission + Number(line.commission) * share);
+    }
+
+    await db.$transaction([
+      ...updates.map((update) =>
+        db.vendorOrderLine.update({
+          where: { id: update.id },
+          data: {
+            refundedQuantity: update.refundedQuantity,
+            refundedSubtotal: update.refundedSubtotal.toFixed(2),
+          },
+        }),
+      ),
+      db.vendorOrder.update({
+        where: { id: vendorOrder.id },
+        data: {
+          refunded: refunded.toFixed(2),
+          refundedCommission: refundedCommission.toFixed(2),
+          refundedEarnings: round2(refunded - refundedCommission).toFixed(2),
+        },
+      }),
+      db.vendorActivity.create({
+        data: {
+          vendorId: vendorOrder.vendorId,
+          action: "order.refunded",
+          actor: "shopify",
+          details: { orderName: vendorOrder.orderName, refunded: refunded.toFixed(2) },
+        },
+      }),
+    ]);
+  }
+}
+
+// Keeps payment status current, including cash on delivery marked paid days later.
+export async function updatePaymentStatus(shop, orderGid, financialStatus) {
+  if (!financialStatus) return;
+
+  const paid = ["PAID", "PARTIALLY_REFUNDED", "REFUNDED"].includes(financialStatus);
+  await db.vendorOrder.updateMany({
+    where: { shop, orderId: orderGid },
+    data: {
+      financialStatus,
+      ...(paid ? { paidAt: new Date() } : {}),
+    },
+  });
 }
 
 export async function cancelVendorOrders(shop, orderGid) {
