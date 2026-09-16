@@ -3,6 +3,7 @@ import { Form, useActionData, useLoaderData, useNavigation } from "react-router"
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
+import { addCarrier, approveCarrier, carrierChoices, listCarrierRequests, rejectCarrier } from "../models/carrier.server";
 import { getCollectionSyncStatus, syncCollections } from "../models/collection.server";
 import {
   getShopCurrency,
@@ -11,16 +12,32 @@ import {
 } from "../models/settings.server";
 import { formatDate } from "../utils/vendor-display";
 
+const ACTOR = "merchant";
+
 export const loader = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
-  const [settings, currencyCode, collections] = await Promise.all([
+  const [settings, currencyCode, collections, carriers, choices] = await Promise.all([
     getShopSettings(session.shop),
     getShopCurrency(admin),
     getCollectionSyncStatus(session.shop),
+    listCarrierRequests(session.shop),
+    carrierChoices(session.shop),
   ]);
 
   return {
     currencyCode,
+    carriers: {
+      fromShopify: choices.fromShopify.length,
+      requests: carriers.map((carrier) => ({
+        id: carrier.id,
+        name: carrier.name,
+        status: carrier.status,
+        reason: carrier.reason,
+        reviewNote: carrier.reviewNote,
+        trackingUrlTemplate: carrier.trackingUrlTemplate,
+        requestedAt: formatDate(carrier.createdAt),
+      })),
+    },
     commission: {
       percent: String(settings.commissionPercent),
       fixed: String(settings.commissionFixed),
@@ -36,6 +53,29 @@ export const action = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
   const formData = await request.formData();
   const intent = String(formData.get("intent") ?? "");
+
+  if (intent === "approveCarrier") {
+    const result = await approveCarrier(session.shop, String(formData.get("carrierId") ?? ""), ACTOR);
+    return { intent, error: result.error ?? null };
+  }
+
+  if (intent === "rejectCarrier") {
+    const result = await rejectCarrier(
+      session.shop,
+      String(formData.get("carrierId") ?? ""),
+      String(formData.get("note") ?? ""),
+      ACTOR,
+    );
+    return { intent, error: result.error ?? null };
+  }
+
+  if (intent === "addCarrier") {
+    const result = await addCarrier(session.shop, {
+      name: String(formData.get("carrierName") ?? ""),
+      trackingUrlTemplate: String(formData.get("trackingUrlTemplate") ?? ""),
+    });
+    return { intent, error: result.error ?? null };
+  }
 
   if (intent === "syncCollections") {
     try {
@@ -58,8 +98,14 @@ export const action = async ({ request }) => {
   return { intent: "commission", saved: true };
 };
 
+const CARRIER_STATUS = {
+  PENDING: { label: "Waiting for you", tone: "warning" },
+  APPROVED: { label: "Available", tone: "success" },
+  REJECTED: { label: "Rejected", tone: "critical" },
+};
+
 export default function Settings() {
-  const { commission, currencyCode, collections } = useLoaderData();
+  const { commission, currencyCode, collections, carriers } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const shopify = useAppBridge();
@@ -150,6 +196,82 @@ export default function Settings() {
           </s-stack>
         </s-section>
       </Form>
+
+      <s-section heading="Couriers vendors can use">
+        <s-stack direction="block" gap="base">
+          <s-paragraph color="subdued">
+            {`Vendors pick from ${carriers.fromShopify} couriers Shopify recognises in your country, so tracking links work by themselves. If their courier isn't there, they ask you to add it.`}
+          </s-paragraph>
+
+          {carriers.requests.length > 0 && (
+            <s-table>
+              <s-table-header-row>
+                <s-table-header listSlot="primary">Courier</s-table-header>
+                <s-table-header listSlot="secondary">Why</s-table-header>
+                <s-table-header listSlot="labeled">Status</s-table-header>
+                <s-table-header listSlot="labeled">Action</s-table-header>
+              </s-table-header-row>
+              <s-table-body>
+                {carriers.requests.map((carrier) => (
+                  <s-table-row key={carrier.id}>
+                    <s-table-cell>
+                      <s-stack direction="block">
+                        <s-text>{carrier.name}</s-text>
+                        {carrier.trackingUrlTemplate && (
+                          <s-text color="subdued">{carrier.trackingUrlTemplate}</s-text>
+                        )}
+                      </s-stack>
+                    </s-table-cell>
+                    <s-table-cell>{carrier.reason ?? "Added by you"}</s-table-cell>
+                    <s-table-cell>
+                      <s-badge tone={CARRIER_STATUS[carrier.status].tone}>
+                        {CARRIER_STATUS[carrier.status].label}
+                      </s-badge>
+                    </s-table-cell>
+                    <s-table-cell>
+                      {carrier.status === "PENDING" ? (
+                        <s-stack direction="inline" gap="small">
+                          <Form method="post">
+                            <input type="hidden" name="intent" value="approveCarrier" />
+                            <input type="hidden" name="carrierId" value={carrier.id} />
+                            <s-button type="submit" variant="primary">
+                              Approve
+                            </s-button>
+                          </Form>
+                          <Form method="post">
+                            <input type="hidden" name="intent" value="rejectCarrier" />
+                            <input type="hidden" name="carrierId" value={carrier.id} />
+                            <input type="hidden" name="note" value="Not a courier this store works with." />
+                            <s-button type="submit">Reject</s-button>
+                          </Form>
+                        </s-stack>
+                      ) : (
+                        <s-text color="subdued">{carrier.requestedAt ?? "—"}</s-text>
+                      )}
+                    </s-table-cell>
+                  </s-table-row>
+                ))}
+              </s-table-body>
+            </s-table>
+          )}
+
+          <Form method="post">
+            <input type="hidden" name="intent" value="addCarrier" />
+            <s-grid gridTemplateColumns="minmax(0,1fr) minmax(0,1.4fr) auto" gap="base" alignItems="end">
+              <s-text-field label="Add a courier" name="carrierName" placeholder="Pathao" required></s-text-field>
+              <s-text-field
+                label="Tracking link"
+                name="trackingUrlTemplate"
+                placeholder="https://courier.com/track?id={tracking_number}"
+                details="Optional. {tracking_number} is replaced with the number."
+              ></s-text-field>
+              <s-button type="submit" loading={submittingIntent === "addCarrier"}>
+                Add
+              </s-button>
+            </s-grid>
+          </Form>
+        </s-stack>
+      </s-section>
     </s-page>
   );
 }

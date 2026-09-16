@@ -1,5 +1,6 @@
 import db from "../db.server";
 import { unauthenticated } from "../shopify.server";
+import { allowedCarrierNames } from "./carrier.server";
 import { getShopSettings } from "./settings.server";
 import { effectiveCommission } from "../utils/commission";
 import { round2 } from "../utils/money";
@@ -751,6 +752,14 @@ export async function fulfillVendorOrder(vendorOrderId, vendorId, tracking, requ
   }
 
   if (!shipping.length) return { error: "Choose at least one item to ship" };
+
+  // Only carriers this shop allows, so tracking links keep working and the data stays clean.
+  if (tracking.company) {
+    const allowed = await allowedCarrierNames(vendorOrder.shop);
+    if (!allowed.has(tracking.company.toLowerCase())) {
+      return { error: `${tracking.company} isn't on the store's courier list. Ask the store to add it.` };
+    }
+  }
 
   // Shopify groups the lines to ship by fulfillment order.
   const byFulfillmentOrder = new Map();

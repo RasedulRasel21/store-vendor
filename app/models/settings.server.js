@@ -5,6 +5,9 @@ const SHOP_CURRENCY = `#graphql
   query ShopCurrency {
     shop {
       currencyCode
+      shopAddress {
+        countryCodeV2
+      }
     }
   }`;
 
@@ -12,19 +15,29 @@ export function getShopSettings(shop) {
   return db.shopSettings.upsert({ where: { shop }, update: {}, create: { shop } });
 }
 
-export async function getShopCurrency(admin) {
+async function getShopBasics(admin) {
   const response = await admin.graphql(SHOP_CURRENCY);
   const { data } = await response.json();
-  return data?.shop?.currencyCode ?? "USD";
+
+  return {
+    currencyCode: data?.shop?.currencyCode ?? "USD",
+    countryCode: data?.shop?.shopAddress?.countryCodeV2 ?? null,
+  };
 }
 
-// Saves the shop currency once, so the vendor portal can show prices in it.
+export async function getShopCurrency(admin) {
+  const { currencyCode } = await getShopBasics(admin);
+  return currencyCode;
+}
+
+// Saves the shop's currency and country once: the portal shows prices in the currency, and
+// the country decides which carriers Shopify offers for tracking.
 export async function ensureShopCurrency(admin, shop) {
   const settings = await getShopSettings(shop);
-  if (settings.currencyCode) return settings.currencyCode;
+  if (settings.currencyCode && settings.countryCode) return settings.currencyCode;
 
-  const currencyCode = await getShopCurrency(admin);
-  await db.shopSettings.update({ where: { shop }, data: { currencyCode } });
+  const { currencyCode, countryCode } = await getShopBasics(admin);
+  await db.shopSettings.update({ where: { shop }, data: { currencyCode, countryCode } });
   return currencyCode;
 }
 

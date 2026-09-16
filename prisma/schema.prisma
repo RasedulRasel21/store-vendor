@@ -42,6 +42,8 @@ model ShopSettings {
   setupGuideDismissedAt DateTime?
   // Shop currency (for example "BDT"), saved by the app so the vendor portal can show prices.
   currencyCode      String?
+  // The shop's country, which decides the carriers Shopify offers for tracking.
+  countryCode       String?
   // When the store's manual collections were last fully synced into ShopCollection.
   collectionsSyncedAt DateTime?
   // The payment customization that runs the cod-rules Function for this shop.
@@ -236,6 +238,32 @@ model VendorOrderLine {
   fulfillableQuantity        Int     @default(0)
 
   @@index([vendorOrderId])
+}
+
+enum CarrierStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// A courier a vendor asked for because Shopify doesn't list it in this country.
+// Once approved, every vendor in the shop can pick it.
+model ShopCarrier {
+  id                  String       @id @default(cuid())
+  shop                String
+  name                String
+  // Where {tracking_number} is replaced with the number, so links work.
+  trackingUrlTemplate String?
+  status              CarrierStatus @default(PENDING)
+  reason              String?
+  reviewNote          String?
+  requestedByVendorId String?
+  reviewedAt          DateTime?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  @@unique([shop, name])
+  @@index([shop, status])
 }
 
 // One parcel: sent by the vendor from the portal, or by the merchant in Shopify admin.
