@@ -1,7 +1,9 @@
-import { useLoaderData } from "react-router";
+import { useEffect } from "react";
+import { useFetcher, useLoaderData } from "react-router";
+import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
-import { listVendorOrders } from "../models/vendor-order.server";
+import { listVendorOrders, syncRecentOrders } from "../models/vendor-order.server";
 import { formatMoney } from "../utils/money";
 import { formatDate, VENDOR_ORDER_STATUS, VENDOR_ORDER_STATUSES } from "../utils/vendor-display";
 
@@ -38,11 +40,52 @@ export const loader = async ({ request }) => {
   };
 };
 
+export const action = async ({ request }) => {
+  const { admin, session } = await authenticate.admin(request);
+  const formData = await request.formData();
+
+  if (formData.get("intent") !== "sync") return { error: "Unknown action" };
+
+  try {
+    const result = await syncRecentOrders(admin, session.shop);
+    return { ...result, error: null };
+  } catch (error) {
+    console.error("Order sync failed", error);
+    return { error: "Orders couldn't be synced. Try again." };
+  }
+};
+
 export default function Orders() {
   const { status, counts, orders } = useLoaderData();
+  const fetcher = useFetcher();
+  const shopify = useAppBridge();
+  const syncing = fetcher.state !== "idle";
+  const result = fetcher.state === "idle" ? fetcher.data : null;
+
+  useEffect(() => {
+    if (!result || result.error) return;
+    const checked = `Checked ${result.checked} ${result.checked === 1 ? "order" : "orders"}`;
+    const added = `added ${result.vendorOrders} vendor ${result.vendorOrders === 1 ? "order" : "orders"}`;
+    shopify.toast.show(
+      result.remaining ? `${checked}, ${added}. ${result.remaining} left: sync again.` : `${checked}, ${added}.`,
+    );
+  }, [result, shopify]);
 
   return (
     <s-page heading="Orders">
+      <s-button
+        slot="primary-action"
+        loading={syncing}
+        onClick={() => fetcher.submit({ intent: "sync" }, { method: "post" })}
+      >
+        Sync recent orders
+      </s-button>
+
+      {result?.error && (
+        <s-banner tone="critical" heading="Couldn't sync orders">
+          {result.error}
+        </s-banner>
+      )}
       <s-section padding="none">
         <s-stack direction="inline" gap="small" padding="base">
           {VENDOR_ORDER_STATUSES.map((value) => (
@@ -60,7 +103,7 @@ export default function Orders() {
           <s-box padding="base">
             <s-paragraph color="subdued">
               {status === "OPEN"
-                ? "No vendor orders are waiting to ship. When a customer buys a vendor's product, their share of the order shows up here."
+                ? "No vendor orders are waiting to ship. New orders arrive here automatically; use Sync recent orders for orders placed before you installed the app."
                 : "No vendor orders with this status."}
             </s-paragraph>
           </s-box>
