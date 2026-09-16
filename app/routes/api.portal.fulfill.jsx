@@ -30,11 +30,26 @@ export const action = async ({ request }) => {
     return Response.json({ error: "Missing order details" }, { status: 400 });
   }
 
-  const result = await fulfillVendorOrder(vendorOrderId, vendorId, {
-    number: text(body?.trackingNumber, 100),
-    company: text(body?.trackingCompany, 100),
-    url: text(body?.trackingUrl, 500),
-  });
+  // Optional: ship only some items. Quantities are checked against the order.
+  const items = Array.isArray(body?.items)
+    ? body.items
+        .map((item) => ({
+          lineId: text(item?.lineId, 100),
+          quantity: Number.isInteger(item?.quantity) ? item.quantity : 0,
+        }))
+        .filter((item) => item.lineId)
+    : [];
+
+  const result = await fulfillVendorOrder(
+    vendorOrderId,
+    vendorId,
+    {
+      number: text(body?.trackingNumber, 100),
+      company: text(body?.trackingCompany, 100),
+      url: text(body?.trackingUrl, 500),
+    },
+    items,
+  );
 
   return Response.json(result, { status: result.error ? 400 : 200 });
 };

@@ -51,6 +51,16 @@ export const loader = async ({ request, params }) => {
         id: vendorOrder.vendor.id,
         name: vendorOrder.vendor.name,
       },
+      shipments: vendorOrder.shipments.map((shipment) => ({
+        id: shipment.id,
+        shippedBy: shipment.shippedBy === "vendor" ? "Vendor" : "Store",
+        tracking: [shipment.trackingCompany, shipment.trackingNumber].filter(Boolean).join(" · "),
+        trackingUrl: shipment.trackingUrl,
+        items: (shipment.items ?? [])
+          .map((item) => `${item.quantity} × ${item.title}`)
+          .join(", "),
+        sentAt: formatDate(shipment.createdAt),
+      })),
       lines: vendorOrder.lines.map((line) => ({
         id: line.id,
         title: line.title,
@@ -58,6 +68,8 @@ export const loader = async ({ request, params }) => {
         sku: line.sku,
         imageUrl: line.imageUrl,
         quantity: line.quantity,
+        shippedQuantity: line.shippedQuantity,
+        refundedQuantity: line.refundedQuantity,
         subtotal: formatMoney(line.subtotal, currency),
         commission: formatMoney(line.commission, currency),
         earnings: formatMoney(line.earnings, currency),
@@ -118,7 +130,16 @@ export default function VendorOrderDetail() {
                     </s-stack>
                   </s-stack>
                 </s-table-cell>
-                <s-table-cell>{String(line.quantity)}</s-table-cell>
+                <s-table-cell>
+                  {line.refundedQuantity || line.shippedQuantity
+                    ? `${line.quantity} (${[
+                        line.shippedQuantity ? `${line.shippedQuantity} shipped` : null,
+                        line.refundedQuantity ? `${line.refundedQuantity} refunded` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(", ")})`
+                    : String(line.quantity)}
+                </s-table-cell>
                 <s-table-cell>{line.subtotal}</s-table-cell>
                 <s-table-cell>{line.commission}</s-table-cell>
                 <s-table-cell>{line.earnings}</s-table-cell>
@@ -153,6 +174,37 @@ export default function VendorOrderDetail() {
             : "Shipping goes to the vendor only when the whole order is theirs and they ship it themselves. Payouts of these earnings come next."}
         </s-paragraph>
       </s-section>
+
+      {order.shipments.length > 0 && (
+        <s-section heading="Shipments">
+          <s-table>
+            <s-table-header-row>
+              <s-table-header listSlot="primary">Items</s-table-header>
+              <s-table-header listSlot="labeled">Tracking</s-table-header>
+              <s-table-header listSlot="labeled">Sent by</s-table-header>
+              <s-table-header listSlot="labeled">Date</s-table-header>
+            </s-table-header-row>
+            <s-table-body>
+              {order.shipments.map((shipment) => (
+                <s-table-row key={shipment.id}>
+                  <s-table-cell>{shipment.items || "—"}</s-table-cell>
+                  <s-table-cell>
+                    {shipment.trackingUrl ? (
+                      <s-link href={shipment.trackingUrl} target="_blank">
+                        {shipment.tracking || "Track"}
+                      </s-link>
+                    ) : (
+                      shipment.tracking || "No tracking"
+                    )}
+                  </s-table-cell>
+                  <s-table-cell>{shipment.shippedBy}</s-table-cell>
+                  <s-table-cell>{shipment.sentAt ?? "—"}</s-table-cell>
+                </s-table-row>
+              ))}
+            </s-table-body>
+          </s-table>
+        </s-section>
+      )}
 
       <s-section heading="Customer">
         <s-stack direction="block" gap="small">

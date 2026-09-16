@@ -44,6 +44,7 @@ export const CHANGE_REQUEST_TYPE = {
 
 export const VENDOR_ORDER_STATUS = {
   OPEN: { label: "To ship", tone: "warning" },
+  PARTIAL: { label: "Partly shipped", tone: "info" },
   FULFILLED: { label: "Shipped", tone: "success" },
   CANCELLED: { label: "Cancelled", tone: "neutral" },
 };
@@ -66,6 +67,8 @@ const ACTIVITY_LABELS = {
   "vendor.contact_updated": "Contact details updated by vendor",
   "order.received": "Order received",
   "order.fulfilled": "Order marked shipped",
+  "order.partly_fulfilled": "Part of an order shipped",
+  "order.refunded": "Order refunded",
   "vendor.payout_change_requested": "Payout change requested",
   "vendor.payout_change_cancelled": "Payout change request withdrawn",
   "vendor.payout_change_approved": "Payout change approved",

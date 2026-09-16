@@ -261,7 +261,14 @@ export async function splitOrder(admin, shop, orderGid) {
           id: true,
           status: true,
           paidAt: true,
-          lines: { select: { lineItemId: true, refundedQuantity: true, refundedSubtotal: true } },
+          lines: {
+            select: {
+              lineItemId: true,
+              refundedQuantity: true,
+              refundedSubtotal: true,
+              shippedQuantity: true,
+            },
+          },
         },
       });
 
@@ -269,13 +276,14 @@ export async function splitOrder(admin, shop, orderGid) {
         // Lines are rebuilt from Shopify, so refunds already recorded are carried over.
         const refundsByLine = new Map(existing.lines.map((line) => [line.lineItemId, line]));
         const keptLines = lines.map((line) => {
-          const refund = refundsByLine.get(line.lineItemId);
-          if (!refund) return line;
-          const refundedSubtotal = Math.min(Number(line.subtotal), Number(refund.refundedSubtotal));
+          const previous = refundsByLine.get(line.lineItemId);
+          if (!previous) return line;
+          const refundedSubtotal = Math.min(Number(line.subtotal), Number(previous.refundedSubtotal));
           return {
             ...line,
-            refundedQuantity: Math.min(line.quantity, refund.refundedQuantity),
+            refundedQuantity: Math.min(line.quantity, previous.refundedQuantity),
             refundedSubtotal: refundedSubtotal.toFixed(2),
+            shippedQuantity: Math.min(line.quantity, previous.shippedQuantity),
           };
         });
 
@@ -476,30 +484,98 @@ export async function cancelVendorOrders(shop, orderGid) {
   });
 }
 
-// Marks a vendor order fulfilled once Shopify reports its lines shipped.
-export async function syncFulfilledVendorOrders(shop, orderGid, fulfilledLineItemIds) {
-  if (!fulfilledLineItemIds.length) return;
+// Open, partly shipped, or fully shipped, based on what's left to send.
+// Refunded items don't need shipping.
+function statusFromLines(lines) {
+  const outstanding = lines.reduce(
+    (sum, line) => sum + Math.max(0, line.quantity - line.refundedQuantity - line.shippedQuantity),
+    0,
+  );
+  const shipped = lines.reduce((sum, line) => sum + line.shippedQuantity, 0);
+
+  if (outstanding === 0) return "FULFILLED";
+  return shipped > 0 ? "PARTIAL" : "OPEN";
+}
+
+// Records one parcel against a vendor order and moves the order's status on.
+async function saveShipment(vendorOrder, { fulfillmentId, tracking, items, shippedBy }) {
+  const byLineId = new Map(items.map((item) => [item.lineId, item.quantity]));
+  const updatedLines = vendorOrder.lines.map((line) => {
+    const quantity = byLineId.get(line.id) ?? 0;
+    return { ...line, shippedQuantity: Math.min(line.quantity, line.shippedQuantity + quantity) };
+  });
+  const status = statusFromLines(updatedLines);
+
+  await db.$transaction([
+    ...updatedLines
+      .filter((line) => byLineId.get(line.id))
+      .map((line) =>
+        db.vendorOrderLine.update({
+          where: { id: line.id },
+          data: { shippedQuantity: line.shippedQuantity },
+        }),
+      ),
+    db.vendorShipment.create({
+      data: {
+        vendorOrderId: vendorOrder.id,
+        fulfillmentId: fulfillmentId ?? null,
+        trackingCompany: tracking.company || null,
+        trackingNumber: tracking.number || null,
+        trackingUrl: tracking.url || null,
+        items: items.map((item) => ({
+          lineId: item.lineId,
+          title: vendorOrder.lines.find((line) => line.id === item.lineId)?.title ?? "",
+          quantity: item.quantity,
+        })),
+        shippedBy,
+      },
+    }),
+    db.vendorOrder.update({
+      where: { id: vendorOrder.id },
+      data: {
+        status,
+        fulfilledAt: status === "FULFILLED" ? new Date() : null,
+      },
+    }),
+  ]);
+
+  return status;
+}
+
+// Shipments made in Shopify admin, or by anyone else, keep vendor orders in step.
+// A shipment the portal just created arrives here too, and is ignored by its fulfillment id.
+export async function recordStoreFulfillment(shop, orderGid, { fulfillmentId, tracking, lines }) {
+  if (!lines.length) return;
+
+  if (fulfillmentId) {
+    const known = await db.vendorShipment.findFirst({ where: { fulfillmentId }, select: { id: true } });
+    if (known) return;
+  }
 
   const vendorOrders = await db.vendorOrder.findMany({
-    where: { shop, orderId: orderGid, status: "OPEN" },
-    include: { lines: { select: { lineItemId: true } } },
+    where: { shop, orderId: orderGid, status: { in: ["OPEN", "PARTIAL"] } },
+    include: { lines: true },
   });
 
-  const now = new Date();
   for (const vendorOrder of vendorOrders) {
-    const allShipped = vendorOrder.lines.every((line) => fulfilledLineItemIds.includes(line.lineItemId));
-    if (!allShipped) continue;
+    const items = vendorOrder.lines
+      .map((line) => {
+        const shipped = lines
+          .filter((item) => item.lineItemId === line.lineItemId)
+          .reduce((sum, item) => sum + item.quantity, 0);
+        const room = Math.max(0, line.quantity - line.shippedQuantity);
+        return { lineId: line.id, quantity: Math.min(room, shipped) };
+      })
+      .filter((item) => item.quantity > 0);
 
-    await db.vendorOrder.update({
-      where: { id: vendorOrder.id },
-      data: { status: "FULFILLED", fulfilledAt: now },
-    });
+    if (!items.length) continue;
+    await saveShipment(vendorOrder, { fulfillmentId, tracking, items, shippedBy: "store" });
   }
 }
 
 // Ships a vendor's lines in Shopify. Called by the vendor portal through /api/portal/fulfill,
 // because the portal has no Shopify access of its own.
-export async function fulfillVendorOrder(vendorOrderId, vendorId, tracking) {
+export async function fulfillVendorOrder(vendorOrderId, vendorId, tracking, requestedItems = []) {
   const vendorOrder = await db.vendorOrder.findFirst({
     where: { id: vendorOrderId, vendorId },
     include: { lines: true },
@@ -511,13 +587,41 @@ export async function fulfillVendorOrder(vendorOrderId, vendorId, tracking) {
     return { error: "The store ships this order, so it can't be shipped from the portal." };
   }
 
+  // What's left to send on each line: refunded items don't ship, and neither do items
+  // already in an earlier parcel.
+  const remainingByLine = new Map(
+    vendorOrder.lines.map((line) => [
+      line.id,
+      Math.max(0, line.quantity - line.refundedQuantity - line.shippedQuantity),
+    ]),
+  );
+
+  // Ship everything that's left unless the vendor picked quantities.
+  const items = requestedItems.length
+    ? requestedItems.map((item) => ({ lineId: item.lineId, quantity: item.quantity }))
+    : vendorOrder.lines.map((line) => ({ lineId: line.id, quantity: remainingByLine.get(line.id) ?? 0 }));
+
+  const shipping = [];
+  for (const item of items) {
+    const line = vendorOrder.lines.find((candidate) => candidate.id === item.lineId);
+    if (!line) return { error: "Those items aren't part of this order" };
+
+    const remaining = remainingByLine.get(line.id) ?? 0;
+    if (item.quantity < 0 || item.quantity > remaining) {
+      return { error: `You can ship up to ${remaining} of "${line.title}"` };
+    }
+    if (item.quantity > 0) shipping.push({ line, quantity: item.quantity });
+  }
+
+  if (!shipping.length) return { error: "Choose at least one item to ship" };
+
   // Shopify groups the lines to ship by fulfillment order.
   const byFulfillmentOrder = new Map();
-  for (const line of vendorOrder.lines) {
-    if (!line.fulfillmentOrderId || !line.fulfillmentOrderLineItemId || line.fulfillableQuantity <= 0) continue;
-    const items = byFulfillmentOrder.get(line.fulfillmentOrderId) ?? [];
-    items.push({ id: line.fulfillmentOrderLineItemId, quantity: line.fulfillableQuantity });
-    byFulfillmentOrder.set(line.fulfillmentOrderId, items);
+  for (const { line, quantity } of shipping) {
+    if (!line.fulfillmentOrderId || !line.fulfillmentOrderLineItemId) continue;
+    const lineItems = byFulfillmentOrder.get(line.fulfillmentOrderId) ?? [];
+    lineItems.push({ id: line.fulfillmentOrderLineItemId, quantity });
+    byFulfillmentOrder.set(line.fulfillmentOrderId, lineItems);
   }
   if (!byFulfillmentOrder.size) {
     return { error: "These items can't be shipped from here. The store may have shipped them already." };
@@ -543,29 +647,30 @@ export async function fulfillVendorOrder(vendorOrderId, vendorId, tracking) {
     },
   });
   const { data } = await response.json();
+  const fulfillment = data?.fulfillmentCreate?.fulfillment;
 
-  if (!data?.fulfillmentCreate?.fulfillment) {
+  if (!fulfillment) {
     const message = data?.fulfillmentCreate?.userErrors?.[0]?.message;
     return { error: message ?? "Shopify couldn't mark these items shipped. Try again." };
   }
 
-  const now = new Date();
-  await db.$transaction([
-    db.vendorOrder.update({
-      where: { id: vendorOrder.id },
-      data: { status: "FULFILLED", fulfilledAt: now },
-    }),
-    db.vendorActivity.create({
-      data: {
-        vendorId: vendorOrder.vendorId,
-        action: "order.fulfilled",
-        actor: "vendor",
-        details: { orderName: vendorOrder.orderName, tracking: tracking.number ?? null },
-      },
-    }),
-  ]);
+  const status = await saveShipment(vendorOrder, {
+    fulfillmentId: fulfillment.id,
+    tracking,
+    items: shipping.map(({ line, quantity }) => ({ lineId: line.id, quantity })),
+    shippedBy: "vendor",
+  });
 
-  return { ok: true };
+  await db.vendorActivity.create({
+    data: {
+      vendorId: vendorOrder.vendorId,
+      action: status === "FULFILLED" ? "order.fulfilled" : "order.partly_fulfilled",
+      actor: "vendor",
+      details: { orderName: vendorOrder.orderName, tracking: tracking.number || null },
+    },
+  });
+
+  return { ok: true, status };
 }
 
 export async function listVendorOrders(shop, { status, vendorId }) {
@@ -597,13 +702,17 @@ export async function listVendorOrders(shop, { status, vendorId }) {
 export function getVendorOrder(shop, id) {
   return db.vendorOrder.findFirst({
     where: { id, shop },
-    include: { vendor: true, lines: { orderBy: { title: "asc" } } },
+    include: {
+      vendor: true,
+      lines: { orderBy: { title: "asc" } },
+      shipments: { orderBy: { createdAt: "desc" } },
+    },
   });
 }
 
 export async function vendorOrderTotals(shop) {
   const [open, earnings] = await Promise.all([
-    db.vendorOrder.count({ where: { shop, status: "OPEN" } }),
+    db.vendorOrder.count({ where: { shop, status: { in: ["OPEN", "PARTIAL"] } } }),
     db.vendorOrder.aggregate({ where: { shop, status: { not: "CANCELLED" } }, _sum: { commission: true } }),
   ]);
 

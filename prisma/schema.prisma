@@ -134,6 +134,8 @@ enum VendorStatus {
 
 enum VendorOrderStatus {
   OPEN
+  // Some items shipped, the rest still to go.
+  PARTIAL
   FULFILLED
   CANCELLED
 }
@@ -178,7 +180,8 @@ model VendorOrder {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  lines VendorOrderLine[]
+  lines     VendorOrderLine[]
+  shipments VendorShipment[]
 
   @@unique([shop, orderId, vendorId])
   @@index([shop, status])
@@ -205,6 +208,7 @@ model VendorOrderLine {
 
   refundedQuantity Int     @default(0)
   refundedSubtotal Decimal @default(0) @db.Decimal(12, 2)
+  shippedQuantity  Int     @default(0)
 
   // Needed to fulfil this line later.
   fulfillmentOrderId         String?
@@ -212,6 +216,27 @@ model VendorOrderLine {
   fulfillableQuantity        Int     @default(0)
 
   @@index([vendorOrderId])
+}
+
+// One parcel: sent by the vendor from the portal, or by the merchant in Shopify admin.
+model VendorShipment {
+  id            String      @id @default(cuid())
+  vendorOrderId String
+  vendorOrder   VendorOrder @relation(fields: [vendorOrderId], references: [id], onDelete: Cascade)
+
+  // Shopify fulfillment GID, used to ignore the webhook for a shipment we just created.
+  fulfillmentId   String?
+  trackingCompany String?
+  trackingNumber  String?
+  trackingUrl     String?
+  // [{ lineId, title, quantity }]
+  items           Json
+  // "vendor" or "store"
+  shippedBy       String
+  createdAt       DateTime    @default(now())
+
+  @@index([vendorOrderId])
+  @@index([fulfillmentId])
 }
 
 enum PayoutMethod {

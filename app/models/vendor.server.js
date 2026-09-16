@@ -112,7 +112,7 @@ export async function getVendorOverview(shop) {
     }),
     db.productSubmission.count({ where: { shop, status: "PENDING" } }),
     db.vendorChangeRequest.count({ where: { shop, status: "PENDING" } }),
-    db.vendorOrder.count({ where: { shop, status: "OPEN" } }),
+    db.vendorOrder.count({ where: { shop, status: { in: ["OPEN", "PARTIAL"] } } }),
   ]);
 
   const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
