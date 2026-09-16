@@ -318,7 +318,14 @@ export async function splitOrder(admin, shop, orderGid) {
       : round2(Math.min(shipping, groups.size === 1 ? unallocatedRefund : 0));
     const refunded = round2(refundedItems + refundedShipping);
     const record = {
-      status: "OPEN",
+      status: orderStatus(
+        lines.map((line) => ({
+          quantity: line.quantity,
+          refundedQuantity: Number(line.refundedQuantity ?? 0),
+          shippedQuantity: 0,
+        })),
+        null,
+      ),
       orderName: order.name,
       currencyCode: order.currencyCode,
       shippingMode: vendor.shippingMode,
@@ -381,10 +388,17 @@ export async function splitOrder(admin, shop, orderGid) {
         await tx.vendorOrderLine.deleteMany({ where: { vendorOrderId: existing.id } });
         await tx.vendorOrder.update({
           where: { id: existing.id },
-          // A vendor order already fulfilled or cancelled keeps its status.
           data: {
             ...record,
-            status: existing.status,
+            // Refunds and shipments can both move an order on; cancelled stays cancelled.
+            status: orderStatus(
+              keptLines.map((line) => ({
+                quantity: line.quantity,
+                refundedQuantity: Number(line.refundedQuantity ?? 0),
+                shippedQuantity: Number(line.shippedQuantity ?? 0),
+              })),
+              existing.status,
+            ),
             paidAt: existing.paidAt ?? record.paidAt,
             lines: { create: keptLines },
           },
@@ -508,14 +522,20 @@ export async function cancelVendorOrders(shop, orderGid) {
   });
 }
 
-// Open, partly shipped, or fully shipped, based on what's left to send.
-// Refunded items don't need shipping.
-function statusFromLines(lines) {
+// Where a vendor order stands: everything refunded, fully shipped, partly shipped, or
+// still to ship. Refunded items don't need shipping. A cancelled order stays cancelled.
+function orderStatus(lines, currentStatus) {
+  if (currentStatus === "CANCELLED") return "CANCELLED";
+
+  const ordered = lines.reduce((sum, line) => sum + line.quantity, 0);
+  const refunded = lines.reduce((sum, line) => sum + (line.refundedQuantity ?? 0), 0);
+  if (ordered > 0 && refunded >= ordered) return "REFUNDED";
+
   const outstanding = lines.reduce(
-    (sum, line) => sum + Math.max(0, line.quantity - line.refundedQuantity - line.shippedQuantity),
+    (sum, line) => sum + Math.max(0, line.quantity - (line.refundedQuantity ?? 0) - (line.shippedQuantity ?? 0)),
     0,
   );
-  const shipped = lines.reduce((sum, line) => sum + line.shippedQuantity, 0);
+  const shipped = lines.reduce((sum, line) => sum + (line.shippedQuantity ?? 0), 0);
 
   if (outstanding === 0) return "FULFILLED";
   return shipped > 0 ? "PARTIAL" : "OPEN";
@@ -528,7 +548,7 @@ async function saveShipment(vendorOrder, { fulfillmentId, tracking, items, shipp
     const quantity = byLineId.get(line.id) ?? 0;
     return { ...line, shippedQuantity: Math.min(line.quantity, line.shippedQuantity + quantity) };
   });
-  const status = statusFromLines(updatedLines);
+  const status = orderStatus(updatedLines, vendorOrder.status);
 
   await db.$transaction([
     ...updatedLines

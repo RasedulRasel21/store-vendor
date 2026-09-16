@@ -46,6 +46,7 @@ export const VENDOR_ORDER_STATUS = {
   OPEN: { label: "To ship", tone: "warning" },
   PARTIAL: { label: "Partly shipped", tone: "info" },
   FULFILLED: { label: "Shipped", tone: "success" },
+  REFUNDED: { label: "Refunded", tone: "warning" },
   CANCELLED: { label: "Cancelled", tone: "neutral" },
 };
 

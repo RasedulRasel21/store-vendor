@@ -137,6 +137,8 @@ enum VendorOrderStatus {
   // Some items shipped, the rest still to go.
   PARTIAL
   FULFILLED
+  // Everything refunded: nothing to ship and nothing to pay out.
+  REFUNDED
   CANCELLED
 }
 
