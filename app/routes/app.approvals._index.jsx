@@ -21,6 +21,7 @@ export const loader = async ({ request }) => {
     submissions: submissions.map((submission) => ({
       id: submission.id,
       title: submission.title,
+      isEdit: Boolean(submission.pendingSubmittedAt),
       vendorName: submission.vendor.name,
       price: submission.price === null ? null : submission.price.toFixed(2),
       submittedAt: formatDate(submission.submittedAt),
@@ -68,9 +69,12 @@ export default function ProductApprovals() {
               {submissions.map((submission) => (
                 <s-table-row key={submission.id}>
                   <s-table-cell>
-                    <s-link href={`/app/approvals/${submission.id}`}>
-                      {submission.title}
-                    </s-link>
+                    <s-stack direction="inline" gap="small" alignItems="center">
+                      <s-link href={`/app/approvals/${submission.id}`}>
+                        {submission.title}
+                      </s-link>
+                      {submission.isEdit && <s-badge tone="info">Edit</s-badge>}
+                    </s-stack>
                   </s-table-cell>
                   <s-table-cell>{submission.vendorName}</s-table-cell>
                   <s-table-cell>{submission.price ?? "—"}</s-table-cell>

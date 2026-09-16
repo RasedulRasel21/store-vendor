@@ -105,6 +105,11 @@ model ProductSubmission {
   imageUrls         String[]
   // Shopify product GID, set when the submission is approved.
   productId         String?
+  // Edits to a product that's already live wait here until the merchant approves them,
+  // so the live product never changes on its own. Same shape as the columns above.
+  pendingDraft      Json?
+  pendingSubmittedAt DateTime?
+  pendingReviewNote String?
   reviewNote        String?
   submittedAt       DateTime?
   reviewedAt        DateTime?

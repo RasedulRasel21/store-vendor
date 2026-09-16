@@ -103,6 +103,48 @@ export function submissionVariants(submission) {
   ];
 }
 
+// Everything productSet needs for a product, shared by new products and approved edits.
+function productInput(source, vendor, { options, variants, collections, locationId }) {
+  const seo = {
+    ...(source.seoTitle ? { title: source.seoTitle } : {}),
+    ...(source.seoDescription ? { description: source.seoDescription } : {}),
+  };
+
+  return {
+    title: source.title,
+    descriptionHtml: source.descriptionHtml
+      ? sanitizeDescription(source.descriptionHtml)
+      : descriptionToHtml(source.description),
+    vendor: vendor.name,
+    ...(source.productType ? { productType: source.productType } : {}),
+    ...(source.handle ? { handle: source.handle } : {}),
+    ...(Object.keys(seo).length ? { seo } : {}),
+    tags: source.tags ?? [],
+    ...(collections.length ? { collections: collections.map((collection) => collection.collectionId) } : {}),
+    status: "ACTIVE",
+    metafields: [
+      {
+        namespace: "$app",
+        key: "vendor_id",
+        type: "single_line_text_field",
+        value: vendor.id,
+      },
+    ],
+    productOptions: options.length
+      ? options.map((option) => ({
+          name: option.name,
+          values: option.values.map((value) => ({ name: value })),
+        }))
+      : [{ name: "Title", values: [{ name: "Default Title" }] }],
+    variants: variants.map((variant) => variantInput(variant, options, source, locationId)),
+    files: (source.imageUrls ?? []).map((url) => ({
+      originalSource: url,
+      contentType: "IMAGE",
+      alt: source.title,
+    })),
+  };
+}
+
 // Every per-variant setting, in productSet's shape. A variant image must be one of the
 // product images: Shopify then attaches the existing image instead of adding a copy.
 function variantInput(variant, options, submission, locationId) {
@@ -158,10 +200,22 @@ export function descriptionToHtml(text) {
     .join("");
 }
 
+// The values to review: a vendor's proposed edit when there is one, otherwise what's live.
+export function reviewedProduct(submission) {
+  const draft = submission.pendingSubmittedAt ? submission.pendingDraft : null;
+  return draft ? { ...submission, ...draft } : submission;
+}
+
 export async function listProductSubmissions(shop, { status }) {
-  const [submissions, grouped] = await Promise.all([
+  // Edits to live products are reviewed alongside new products.
+  const where =
+    status === "PENDING"
+      ? { shop, OR: [{ status: "PENDING" }, { pendingSubmittedAt: { not: null } }] }
+      : { shop, status };
+
+  const [submissions, grouped, editCount] = await Promise.all([
     db.productSubmission.findMany({
-      where: { shop, status },
+      where,
       orderBy: { submittedAt: status === "PENDING" ? "asc" : "desc" },
       include: { vendor: { select: { name: true } } },
     }),
@@ -170,9 +224,11 @@ export async function listProductSubmissions(shop, { status }) {
       where: { shop, status: { in: SUBMISSION_REVIEW_STATUSES } },
       _count: { _all: true },
     }),
+    db.productSubmission.count({ where: { shop, pendingSubmittedAt: { not: null } } }),
   ]);
 
   const counts = Object.fromEntries(grouped.map((row) => [row.status, row._count._all]));
+  counts.PENDING = (counts.PENDING ?? 0) + editCount;
 
   return { submissions, counts };
 }
@@ -221,50 +277,15 @@ export async function approveProductSubmission(admin, shop, id, actor) {
 
     // Collections deleted (or turned smart) since the vendor picked them are skipped.
     const collections = await getShopCollections(shop, submission.collectionIds);
-    const seo = {
-      ...(submission.seoTitle ? { title: submission.seoTitle } : {}),
-      ...(submission.seoDescription ? { description: submission.seoDescription } : {}),
-    };
 
     const response = await admin.graphql(CREATE_PRODUCT, {
       variables: {
-        input: {
-          title: submission.title,
-          descriptionHtml: submission.descriptionHtml
-            ? sanitizeDescription(submission.descriptionHtml)
-            : descriptionToHtml(submission.description),
-          vendor: submission.vendor.name,
-          ...(submission.productType ? { productType: submission.productType } : {}),
-          ...(submission.handle ? { handle: submission.handle } : {}),
-          ...(Object.keys(seo).length ? { seo } : {}),
-          tags: submission.tags,
-          ...(collections.length
-            ? { collections: collections.map((collection) => collection.collectionId) }
-            : {}),
-          status: "ACTIVE",
-          metafields: [
-            {
-              namespace: "$app",
-              key: "vendor_id",
-              type: "single_line_text_field",
-              value: submission.vendor.id,
-            },
-          ],
-          productOptions: options.length
-            ? options.map((option) => ({
-                name: option.name,
-                values: option.values.map((value) => ({ name: value })),
-              }))
-            : [{ name: "Title", values: [{ name: "Default Title" }] }],
-          variants: variants.map((variant) =>
-            variantInput(variant, options, submission, locationId),
-          ),
-          files: submission.imageUrls.map((url) => ({
-            originalSource: url,
-            contentType: "IMAGE",
-            alt: submission.title,
-          })),
-        },
+        input: productInput(submission, submission.vendor, {
+          options,
+          variants,
+          collections,
+          locationId,
+        }),
       },
     });
     const { data } = await response.json();
@@ -313,6 +334,115 @@ export async function approveProductSubmission(admin, shop, id, actor) {
   ]);
 
   return { productId, warning };
+}
+
+// Applies a vendor's edit to the product that's already live in the store.
+export async function approveProductEdit(admin, shop, id, actor) {
+  const submission = await db.productSubmission.findFirst({
+    where: { id, shop },
+    include: { vendor: true },
+  });
+  if (!submission) return { error: "Product not found" };
+  if (!submission.pendingSubmittedAt || !submission.pendingDraft) {
+    return { error: "This product has no changes waiting for approval" };
+  }
+  if (!submission.productId) return { error: "This product isn't in Shopify yet" };
+  if (submission.vendor.status !== "ACTIVE") {
+    return { error: "This vendor isn't active. Reactivate the vendor before approving their changes." };
+  }
+
+  const changes = reviewedProduct(submission);
+  const options = submissionOptions(changes);
+  const variants = submissionVariants(changes);
+  if (!variants.length || variants.some((variant) => !variant.price)) {
+    return { error: "Every variant needs a price before the changes can be approved" };
+  }
+
+  // Claim the review so two clicks can't both update the product.
+  const claim = await db.productSubmission.updateMany({
+    where: { id, shop, pendingSubmittedAt: { not: null }, updatedAt: submission.updatedAt },
+    data: { reviewedAt: new Date() },
+  });
+  if (claim.count !== 1) return { error: "These changes are already being reviewed. Refresh the page." };
+
+  try {
+    const contextResponse = await admin.graphql(APPROVAL_CONTEXT);
+    const { data: context } = await contextResponse.json();
+    const locationId = context?.location?.id;
+    const collections = await getShopCollections(shop, changes.collectionIds ?? []);
+
+    const response = await admin.graphql(CREATE_PRODUCT, {
+      variables: {
+        input: {
+          id: submission.productId,
+          ...productInput(changes, submission.vendor, { options, variants, collections, locationId }),
+        },
+      },
+    });
+    const { data } = await response.json();
+
+    if (!data?.productSet?.product?.id) {
+      const message = data?.productSet?.userErrors?.[0]?.message;
+      return { error: message ?? "Shopify couldn't update the product. Try again." };
+    }
+  } catch (error) {
+    console.error("Product edit approval failed", error);
+    return { error: "Shopify couldn't update the product. Check the details and try again." };
+  }
+
+  const { pendingDraft } = submission;
+  await db.$transaction([
+    db.productSubmission.update({
+      where: { id: submission.id },
+      data: {
+        ...pendingDraft,
+        pendingDraft: null,
+        pendingSubmittedAt: null,
+        pendingReviewNote: null,
+        reviewedAt: new Date(),
+      },
+    }),
+    db.vendorActivity.create({
+      data: {
+        vendorId: submission.vendorId,
+        action: "product.changes_approved",
+        actor,
+        details: { submissionId: submission.id, title: changes.title },
+      },
+    }),
+  ]);
+
+  return { ok: true };
+}
+
+// Sends an edit back. The live product stays as it is, and the vendor keeps their draft.
+export async function rejectProductEdit(shop, id, note, actor) {
+  const trimmed = note?.trim();
+  if (!trimmed) return { error: "Add a note so the vendor knows what to change" };
+  if (trimmed.length > 2000) return { error: "Keep the note to 2,000 characters or fewer" };
+
+  const submission = await db.productSubmission.findFirst({
+    where: { id, shop, pendingSubmittedAt: { not: null } },
+    select: { id: true, vendorId: true, title: true },
+  });
+  if (!submission) return { error: "This product has no changes waiting for approval" };
+
+  await db.$transaction([
+    db.productSubmission.update({
+      where: { id: submission.id },
+      data: { pendingSubmittedAt: null, pendingReviewNote: trimmed, reviewedAt: new Date() },
+    }),
+    db.vendorActivity.create({
+      data: {
+        vendorId: submission.vendorId,
+        action: "product.changes_rejected",
+        actor,
+        details: { submissionId: submission.id, title: submission.title, reason: trimmed },
+      },
+    }),
+  ]);
+
+  return { ok: true };
 }
 
 export async function rejectProductSubmission(shop, id, note, actor) {

@@ -4,10 +4,13 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import {
+  approveProductEdit,
   approveProductSubmission,
   descriptionToHtml,
   getProductSubmission,
+  rejectProductEdit,
   rejectProductSubmission,
+  reviewedProduct,
   submissionOptions,
   submissionVariants,
 } from "../models/product-submission.server";
@@ -52,25 +55,30 @@ export const loader = async ({ request, params }) => {
     throw new Response("Product submission not found", { status: 404 });
   }
 
-  const collections = await getShopCollections(session.shop, submission.collectionIds);
+  // A live product with an edit waiting is reviewed on its proposed values.
+  const changes = reviewedProduct(submission);
+  const isEdit = Boolean(submission.pendingSubmittedAt);
+  const collections = await getShopCollections(session.shop, changes.collectionIds ?? []);
 
   return {
     currencyCode: settings.currencyCode ?? "USD",
     collections: collections.map((collection) => collection.title),
     submission: {
       id: submission.id,
-      title: submission.title,
-      descriptionHtml: submission.descriptionHtml
-        ? sanitizeDescription(submission.descriptionHtml)
-        : descriptionToHtml(submission.description),
-      options: submissionOptions(submission),
-      variants: submissionVariants(submission),
-      seoTitle: submission.seoTitle,
-      seoDescription: submission.seoDescription,
-      handle: submission.handle,
-      productType: submission.productType,
-      tags: submission.tags,
-      imageUrls: submission.imageUrls,
+      isEdit,
+      liveTitle: submission.title,
+      title: changes.title,
+      descriptionHtml: changes.descriptionHtml
+        ? sanitizeDescription(changes.descriptionHtml)
+        : descriptionToHtml(changes.description),
+      options: submissionOptions(changes),
+      variants: submissionVariants(changes),
+      seoTitle: changes.seoTitle,
+      seoDescription: changes.seoDescription,
+      handle: changes.handle,
+      productType: changes.productType,
+      tags: changes.tags,
+      imageUrls: changes.imageUrls,
       status: submission.status,
       reviewNote: submission.reviewNote,
       productNumericId: submission.productId?.split("/").pop() ?? null,
@@ -86,18 +94,21 @@ export const action = async ({ request, params }) => {
   const formData = await request.formData();
   const intent = String(formData.get("intent") ?? "");
 
+  // Editing a live product is reviewed the same way, but applies to the existing product.
+  const isEdit = formData.get("isEdit") === "true";
+
   if (intent === "approve") {
-    const result = await approveProductSubmission(admin, session.shop, params.id, ACTOR);
+    const result = isEdit
+      ? await approveProductEdit(admin, session.shop, params.id, ACTOR)
+      : await approveProductSubmission(admin, session.shop, params.id, ACTOR);
     return { intent, error: result.error ?? null, warning: result.warning ?? null };
   }
 
   if (intent === "reject") {
-    const result = await rejectProductSubmission(
-      session.shop,
-      params.id,
-      String(formData.get("note") ?? ""),
-      ACTOR,
-    );
+    const note = String(formData.get("note") ?? "");
+    const result = isEdit
+      ? await rejectProductEdit(session.shop, params.id, note, ACTOR)
+      : await rejectProductSubmission(session.shop, params.id, note, ACTOR);
     return { intent, error: result.error ?? null };
   }
 
@@ -114,7 +125,7 @@ export default function ReviewProduct() {
   const approving =
     fetcher.state !== "idle" && fetcher.formData?.get("intent") === "approve";
   const status = SUBMISSION_REVIEW_STATUS[submission.status];
-  const isPending = submission.status === "PENDING";
+  const isPending = submission.status === "PENDING" || submission.isEdit;
 
   useEffect(() => {
     if (!result || result.error) return;
@@ -123,7 +134,7 @@ export default function ReviewProduct() {
   }, [result, shopify]);
 
   const submit = (intent, extra = {}) =>
-    fetcher.submit({ intent, ...extra }, { method: "post" });
+    fetcher.submit({ intent, isEdit: String(submission.isEdit), ...extra }, { method: "post" });
 
   return (
     <s-page heading={submission.title}>
@@ -134,9 +145,10 @@ export default function ReviewProduct() {
         <s-button
           slot="primary-action"
           variant="primary"
+          loading={approving}
           onClick={() => submit("approve")}
         >
-          Approve
+          {submission.isEdit ? "Approve changes" : "Approve"}
         </s-button>
       )}
       {isPending && (
@@ -147,6 +159,12 @@ export default function ReviewProduct() {
         >
           Request changes
         </s-button>
+      )}
+
+      {submission.isEdit && (
+        <s-banner tone="info" heading="Changes to a product that's live">
+          {`The vendor edited "${submission.liveTitle}". What you see below is their new version; the live product stays as it is until you approve.`}
+        </s-banner>
       )}
 
       {approving && (
