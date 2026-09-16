@@ -62,7 +62,7 @@ api_version = "2026-10"
 
   [[webhooks.subscriptions]]
   uri = "/webhooks/fulfillments/create"
-  topics = [ "fulfillments/create" ]
+  topics = [ "fulfillments/create", "fulfillments/update" ]
 
 [auth]
 redirect_urls = [ "https://store-vendor.vercel.app/auth/callback" ]

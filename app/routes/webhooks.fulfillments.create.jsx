@@ -1,14 +1,26 @@
 import { authenticate } from "../shopify.server";
-import { recordStoreFulfillment } from "../models/vendor-order.server";
+import { recordStoreFulfillment, updateShipmentTracking } from "../models/vendor-order.server";
 
-// Keeps vendor orders in step when anyone ships lines, including the merchant in Shopify admin.
-// A parcel the vendor portal just created is recognised by its fulfillment id and skipped.
+// fulfillments/create and fulfillments/update both land here, so vendors see parcels the
+// merchant sent, and tracking added or corrected afterwards. A parcel the portal created
+// is recognised by its fulfillment id, so it isn't recorded twice.
 export const action = async ({ request }) => {
-  const { shop, topic, payload } = await authenticate.webhook(request);
+  const { shop, topic, payload, admin } = await authenticate.webhook(request);
 
   console.log(`Received ${topic} webhook for ${shop}`);
 
   const orderGid = payload?.order_id ? `gid://shopify/Order/${payload.order_id}` : null;
+  const fulfillmentId =
+    payload?.admin_graphql_api_id ?? (payload?.id ? `gid://shopify/Fulfillment/${payload.id}` : null);
+  const tracking = {
+    company: payload?.tracking_company ?? "",
+    number: payload?.tracking_number ?? payload?.tracking_numbers?.[0] ?? "",
+    url: payload?.tracking_url ?? payload?.tracking_urls?.[0] ?? "",
+  };
+
+  const updated = await updateShipmentTracking(shop, fulfillmentId, tracking, admin);
+  if (updated || !orderGid) return new Response();
+
   const lines = (payload?.line_items ?? [])
     .map((line) => ({
       lineItemId: line.admin_graphql_api_id ?? (line.id ? `gid://shopify/LineItem/${line.id}` : null),
@@ -16,17 +28,7 @@ export const action = async ({ request }) => {
     }))
     .filter((line) => line.lineItemId && line.quantity > 0);
 
-  if (orderGid) {
-    await recordStoreFulfillment(shop, orderGid, {
-      fulfillmentId: payload?.admin_graphql_api_id ?? null,
-      tracking: {
-        company: payload?.tracking_company ?? "",
-        number: payload?.tracking_number ?? "",
-        url: payload?.tracking_url ?? "",
-      },
-      lines,
-    });
-  }
+  await recordStoreFulfillment(shop, orderGid, { fulfillmentId, tracking, lines, admin });
 
   return new Response();
 };

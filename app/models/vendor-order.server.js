@@ -96,6 +96,14 @@ const ORDER_FOR_SPLIT = `#graphql
           }
         }
       }
+      fulfillments(first: 50) {
+        id
+        trackingInfo {
+          company
+          number
+          url
+        }
+      }
       refunds(first: 50) {
         id
         refundLineItems(first: 250) {
@@ -398,7 +406,26 @@ export async function splitOrder(admin, shop, orderGid) {
     });
   }
 
+  await refreshShipmentTracking(order);
+
   return { vendorOrders: groups.size };
+}
+
+// Tracking can be added in Shopify after a parcel was recorded, so a re-read fixes it up.
+async function refreshShipmentTracking(order) {
+  for (const fulfillment of order.fulfillments ?? []) {
+    const info = fulfillment.trackingInfo?.[0];
+    if (!info) continue;
+
+    await db.vendorShipment.updateMany({
+      where: { fulfillmentId: fulfillment.id },
+      data: {
+        trackingCompany: info.company || null,
+        trackingNumber: info.number || null,
+        trackingUrl: info.url || null,
+      },
+    });
+  }
 }
 
 const RECENT_ORDERS = `#graphql
@@ -539,15 +566,66 @@ async function saveShipment(vendorOrder, { fulfillmentId, tracking, items, shipp
   return status;
 }
 
+const FULFILLMENT_TRACKING = `#graphql
+  query FulfillmentTracking($id: ID!) {
+    fulfillment(id: $id) {
+      id
+      trackingInfo {
+        company
+        number
+        url
+      }
+    }
+  }`;
+
+// Webhook payloads don't always carry tracking, so it's read back from Shopify.
+async function trackingFromShopify(admin, fulfillmentId) {
+  if (!admin || !fulfillmentId) return null;
+
+  try {
+    const response = await admin.graphql(FULFILLMENT_TRACKING, { variables: { id: fulfillmentId } });
+    const { data } = await response.json();
+    const info = data?.fulfillment?.trackingInfo?.[0];
+    if (!info) return null;
+
+    return { company: info.company ?? "", number: info.number ?? "", url: info.url ?? "" };
+  } catch (error) {
+    console.error("Couldn't read fulfillment tracking", error);
+    return null;
+  }
+}
+
+// Tracking added or corrected in Shopify after the parcel was created.
+export async function updateShipmentTracking(shop, fulfillmentId, tracking, admin) {
+  if (!fulfillmentId) return false;
+
+  const shipment = await db.vendorShipment.findFirst({ where: { fulfillmentId }, select: { id: true } });
+  if (!shipment) return false;
+
+  const info = (await trackingFromShopify(admin, fulfillmentId)) ?? tracking;
+  await db.vendorShipment.update({
+    where: { id: shipment.id },
+    data: {
+      trackingCompany: info.company || null,
+      trackingNumber: info.number || null,
+      trackingUrl: info.url || null,
+    },
+  });
+
+  return true;
+}
+
 // Shipments made in Shopify admin, or by anyone else, keep vendor orders in step.
 // A shipment the portal just created arrives here too, and is ignored by its fulfillment id.
-export async function recordStoreFulfillment(shop, orderGid, { fulfillmentId, tracking, lines }) {
+export async function recordStoreFulfillment(shop, orderGid, { fulfillmentId, tracking, lines, admin }) {
   if (!lines.length) return;
 
   if (fulfillmentId) {
     const known = await db.vendorShipment.findFirst({ where: { fulfillmentId }, select: { id: true } });
     if (known) return;
   }
+
+  const info = (await trackingFromShopify(admin, fulfillmentId)) ?? tracking;
 
   const vendorOrders = await db.vendorOrder.findMany({
     where: { shop, orderId: orderGid, status: { in: ["OPEN", "PARTIAL"] } },
@@ -566,7 +644,7 @@ export async function recordStoreFulfillment(shop, orderGid, { fulfillmentId, tr
       .filter((item) => item.quantity > 0);
 
     if (!items.length) continue;
-    await saveShipment(vendorOrder, { fulfillmentId, tracking, items, shippedBy: "store" });
+    await saveShipment(vendorOrder, { fulfillmentId, tracking: info, items, shippedBy: "store" });
   }
 }
 
