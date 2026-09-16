@@ -1,22 +1,15 @@
 import { authenticate } from "../shopify.server";
-import { applyRefund } from "../models/vendor-order.server";
+import { splitOrder } from "../models/vendor-order.server";
 
-// A refund reverses the vendor's earnings and the store's commission on the refunded lines.
+// Refunds are read from the order itself, because a refund can be recorded line by line,
+// as an amount with no lines, or as a full refund. Splitting again reads whichever it was.
 export const action = async ({ request }) => {
-  const { shop, topic, payload } = await authenticate.webhook(request);
+  const { shop, topic, payload, admin } = await authenticate.webhook(request);
 
   console.log(`Received ${topic} webhook for ${shop}`);
 
   const orderGid = payload?.order_id ? `gid://shopify/Order/${payload.order_id}` : null;
-  const refundLines = (payload?.refund_line_items ?? [])
-    .map((item) => ({
-      lineItemId: item.line_item_id ? `gid://shopify/LineItem/${item.line_item_id}` : null,
-      quantity: Number(item.quantity ?? 0),
-      subtotal: Number(item.subtotal_set?.shop_money?.amount ?? item.subtotal ?? 0),
-    }))
-    .filter((item) => item.lineItemId && (item.quantity > 0 || item.subtotal > 0));
-
-  if (orderGid) await applyRefund(shop, orderGid, refundLines);
+  if (orderGid && admin) await splitOrder(admin, shop, orderGid);
 
   return new Response();
 };

@@ -16,6 +16,16 @@ const ORDER_FOR_SPLIT = `#graphql
       taxesIncluded
       email
       phone
+      totalPriceSet {
+        shopMoney {
+          amount
+        }
+      }
+      totalRefundedSet {
+        shopMoney {
+          amount
+        }
+      }
       customer {
         displayName
       }
@@ -215,6 +225,16 @@ export async function splitOrder(admin, shop, orderGid) {
   const fulfillment = fulfillmentByLineItem(order);
   const refunds = refundsByLineItem(order);
 
+  // Shopify records refunds in three ways: line by line, as an amount with no lines, or
+  // as a full refund of the order. The last two carry no breakdown to work from.
+  const totalRefunded = money(order.totalRefundedSet);
+  const refundedByLine = [...refunds.values()].reduce((sum, refund) => sum + refund.subtotal, 0);
+  const fullyRefunded =
+    totalRefunded > 0 &&
+    (order.displayFinancialStatus === "REFUNDED" || totalRefunded >= money(order.totalPriceSet));
+  // What's left over covers shipping, tax or an amount refund not tied to any line.
+  const unallocatedRefund = fullyRefunded ? 0 : round2(Math.max(0, totalRefunded - refundedByLine));
+
   // Group the order's lines by vendor and work out what each line earns.
   const groups = new Map();
   for (const line of lineItems) {
@@ -231,7 +251,10 @@ export async function splitOrder(admin, shop, orderGid) {
       round2((subtotal * Number(rate.percent)) / 100 + Number(rate.fixed) * line.quantity),
     );
 
-    const refund = refunds.get(line.id);
+    // A full refund often has no line breakdown, so every line counts as refunded.
+    const refund = fullyRefunded
+      ? { quantity: line.quantity, subtotal }
+      : refunds.get(line.id);
     const group = groups.get(vendor.id) ?? { vendor, lines: [] };
     group.lines.push({
       lineItemId: line.id,
@@ -270,7 +293,7 @@ export async function splitOrder(admin, shop, orderGid) {
     const subtotal = round2(lines.reduce((sum, line) => sum + Number(line.subtotal), 0));
     const commission = round2(lines.reduce((sum, line) => sum + Number(line.commission), 0));
     const shipping = shippingForVendor(vendor);
-    const refunded = round2(lines.reduce((sum, line) => sum + Number(line.refundedSubtotal ?? 0), 0));
+    const refundedItems = round2(lines.reduce((sum, line) => sum + Number(line.refundedSubtotal ?? 0), 0));
     const refundedCommission = round2(
       lines.reduce((sum, line) => {
         const refundedSubtotal = Number(line.refundedSubtotal ?? 0);
@@ -279,6 +302,13 @@ export async function splitOrder(admin, shop, orderGid) {
         return sum + Number(line.commission) * share;
       }, 0),
     );
+
+    // Shipping credited to this vendor comes back too: fully on a full refund, and up to
+    // the leftover amount when the refund wasn't broken down by line.
+    const refundedShipping = fullyRefunded
+      ? shipping
+      : round2(Math.min(shipping, groups.size === 1 ? unallocatedRefund : 0));
+    const refunded = round2(refundedItems + refundedShipping);
     const record = {
       status: "OPEN",
       orderName: order.name,
@@ -306,7 +336,7 @@ export async function splitOrder(admin, shop, orderGid) {
       earnings: round2(subtotal - commission + shipping).toFixed(2),
       refunded: refunded.toFixed(2),
       refundedCommission: refundedCommission.toFixed(2),
-      refundedEarnings: round2(refunded - refundedCommission).toFixed(2),
+      refundedEarnings: round2(refundedItems - refundedCommission + refundedShipping).toFixed(2),
       placedAt,
       paidAt: PAID_STATUSES.includes(order.displayFinancialStatus) ? new Date() : null,
     };
@@ -428,80 +458,6 @@ export async function syncRecentOrders(admin, shop, { days = 60, batchSize = 20 
     remaining: Math.max(0, candidates.length - batch.length),
     days,
   };
-}
-
-// A refund reverses part of a sale: the vendor's share of the refunded lines, and the
-// commission taken on them, so payouts only pay for goods the customer kept.
-export async function applyRefund(shop, orderGid, refundLines) {
-  if (!refundLines.length) return;
-
-  const vendorOrders = await db.vendorOrder.findMany({
-    where: { shop, orderId: orderGid },
-    include: { lines: true },
-  });
-  if (!vendorOrders.length) return;
-
-  for (const vendorOrder of vendorOrders) {
-    const updates = [];
-
-    for (const line of vendorOrder.lines) {
-      const refunds = refundLines.filter((refund) => refund.lineItemId === line.lineItemId);
-      if (!refunds.length) continue;
-
-      const quantity = refunds.reduce((sum, refund) => sum + refund.quantity, 0);
-      const amount = refunds.reduce((sum, refund) => sum + refund.subtotal, 0);
-      updates.push({
-        id: line.id,
-        refundedQuantity: Math.min(line.quantity, line.refundedQuantity + quantity),
-        refundedSubtotal: Math.min(Number(line.subtotal), round2(Number(line.refundedSubtotal) + amount)),
-      });
-    }
-
-    if (!updates.length) continue;
-
-    const byId = new Map(updates.map((update) => [update.id, update]));
-    let refunded = 0;
-    let refundedCommission = 0;
-
-    for (const line of vendorOrder.lines) {
-      const update = byId.get(line.id);
-      const refundedSubtotal = update ? update.refundedSubtotal : Number(line.refundedSubtotal);
-      if (!refundedSubtotal) continue;
-
-      // Commission comes back in the same proportion as the money refunded.
-      const share = Number(line.subtotal) > 0 ? refundedSubtotal / Number(line.subtotal) : 1;
-      refunded = round2(refunded + refundedSubtotal);
-      refundedCommission = round2(refundedCommission + Number(line.commission) * share);
-    }
-
-    await db.$transaction([
-      ...updates.map((update) =>
-        db.vendorOrderLine.update({
-          where: { id: update.id },
-          data: {
-            refundedQuantity: update.refundedQuantity,
-            refundedSubtotal: update.refundedSubtotal.toFixed(2),
-          },
-        }),
-      ),
-      db.vendorOrder.update({
-        where: { id: vendorOrder.id },
-        data: {
-          refunded: refunded.toFixed(2),
-          refundedCommission: refundedCommission.toFixed(2),
-          refundedEarnings: round2(refunded - refundedCommission).toFixed(2),
-        },
-      }),
-      db.vendorActivity.create({
-        data: {
-          vendorId: vendorOrder.vendorId,
-          action: "order.refunded",
-          actor: "shopify",
-          details: { orderName: vendorOrder.orderName, refunded: refunded.toFixed(2) },
-        },
-      }),
-    ]);
-  }
 }
 
 // Keeps payment status current, including cash on delivery marked paid days later.
