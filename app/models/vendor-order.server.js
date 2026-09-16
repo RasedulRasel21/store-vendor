@@ -13,6 +13,7 @@ const ORDER_FOR_SPLIT = `#graphql
       processedAt
       displayFinancialStatus
       currencyCode
+      presentmentCurrencyCode
       taxesIncluded
       email
       phone
@@ -40,6 +41,7 @@ const ORDER_FOR_SPLIT = `#graphql
         phone
       }
       shippingLine {
+        title
         discountedPriceSet {
           shopMoney {
             amount
@@ -53,6 +55,7 @@ const ORDER_FOR_SPLIT = `#graphql
           variantTitle
           sku
           quantity
+          requiresShipping
           originalUnitPriceSet {
             shopMoney {
               amount
@@ -61,6 +64,19 @@ const ORDER_FOR_SPLIT = `#graphql
           discountedTotalSet {
             shopMoney {
               amount
+            }
+            presentmentMoney {
+              amount
+            }
+          }
+          variant {
+            inventoryItem {
+              measurement {
+                weight {
+                  value
+                  unit
+                }
+              }
             }
           }
           taxLines {
@@ -85,6 +101,9 @@ const ORDER_FOR_SPLIT = `#graphql
         nodes {
           id
           status
+          deliveryMethod {
+            methodType
+          }
           lineItems(first: 250) {
             nodes {
               id
@@ -279,6 +298,15 @@ export async function splitOrder(admin, shop, orderGid) {
       quantity: line.quantity,
       unitPrice: money(line.originalUnitPriceSet).toFixed(2),
       subtotal: subtotal.toFixed(2),
+      tax: round2(taxTotal).toFixed(2),
+      presentmentSubtotal: Number(line.discountedTotalSet?.presentmentMoney?.amount ?? 0).toFixed(2),
+      requiresShipping: line.requiresShipping !== false,
+      ...(line.variant?.inventoryItem?.measurement?.weight
+        ? {
+            weight: Number(line.variant.inventoryItem.measurement.weight.value ?? 0).toFixed(3),
+            weightUnit: line.variant.inventoryItem.measurement.weight.unit ?? null,
+          }
+        : {}),
       commission: commission.toFixed(2),
       earnings: round2(subtotal - commission).toFixed(2),
       ...(fulfillment.get(line.id) ?? { fulfillableQuantity: 0 }),
@@ -296,6 +324,10 @@ export async function splitOrder(admin, shop, orderGid) {
 
   const address = order.shippingAddress;
   const placedAt = new Date(order.processedAt);
+  // Pickup and digital orders aren't posted, which changes what vendors are told to do.
+  const deliveryMethod =
+    order.fulfillmentOrders?.nodes?.find((node) => node.deliveryMethod?.methodType)?.deliveryMethod
+      ?.methodType ?? null;
 
   for (const { vendor, lines } of groups.values()) {
     const subtotal = round2(lines.reduce((sum, line) => sum + Number(line.subtotal), 0));
@@ -328,6 +360,16 @@ export async function splitOrder(admin, shop, orderGid) {
       ),
       orderName: order.name,
       currencyCode: order.currencyCode,
+      // Only worth keeping when the buyer paid in a different currency.
+      presentmentCurrency:
+        order.presentmentCurrencyCode && order.presentmentCurrencyCode !== order.currencyCode
+          ? order.presentmentCurrencyCode
+          : null,
+      presentmentSubtotal: round2(
+        lines.reduce((sum, line) => sum + Number(line.presentmentSubtotal ?? 0), 0),
+      ).toFixed(2),
+      deliveryMethod,
+      shippingMethod: order.shippingLine?.title ?? null,
       shippingMode: vendor.shippingMode,
       financialStatus: order.displayFinancialStatus ?? null,
       customerName: order.customer?.displayName ?? address?.name ?? null,

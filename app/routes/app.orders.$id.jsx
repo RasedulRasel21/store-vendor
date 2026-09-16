@@ -47,6 +47,12 @@ export const loader = async ({ request, params }) => {
       payable: formatMoney(Number(vendorOrder.earnings) - Number(vendorOrder.refundedEarnings), currency),
       paidAt: formatDate(vendorOrder.paidAt),
       shippingMode: vendorOrder.shippingMode,
+      shippingMethod: vendorOrder.shippingMethod,
+      isPickup: ["PICK_UP", "RETAIL"].includes(vendorOrder.deliveryMethod ?? ""),
+      customerPaid:
+        vendorOrder.presentmentCurrency && vendorOrder.presentmentSubtotal
+          ? formatMoney(vendorOrder.presentmentSubtotal, vendorOrder.presentmentCurrency)
+          : null,
       vendor: {
         id: vendorOrder.vendor.id,
         name: vendorOrder.vendor.name,
@@ -167,6 +173,12 @@ export default function VendorOrderDetail() {
           )}
           <s-text color="subdued">Vendor earns</s-text>
           <s-text type="strong">{order.isRefunded ? order.payable : order.earnings}</s-text>
+          {order.customerPaid && (
+            <>
+              <s-text color="subdued">Customer paid</s-text>
+              <s-text>{`${order.customerPaid} for these items`}</s-text>
+            </>
+          )}
         </s-grid>
         <s-paragraph color="subdued">
           {order.isRefunded
@@ -226,6 +238,11 @@ export default function VendorOrderDetail() {
           <s-text color="subdued">
             {order.shippingMode === "VENDOR_SHIPS" ? "Vendor ships" : "Store ships"}
           </s-text>
+          {order.isPickup ? (
+            <s-text color="subdued">Customer collects from the store</s-text>
+          ) : (
+            order.shippingMethod && <s-text color="subdued">{`Chosen at checkout: ${order.shippingMethod}`}</s-text>
+          )}
           {order.financialStatus && (
             <s-text color="subdued">
               {`Payment: ${order.financialStatus}${order.paidAt ? ` · paid ${order.paidAt}` : ""}`}

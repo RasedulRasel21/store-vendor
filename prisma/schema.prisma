@@ -154,6 +154,14 @@ model VendorOrder {
   orderId         String
   orderName       String
   currencyCode    String
+  // What the buyer actually paid in, when it differs from the shop currency.
+  presentmentCurrency String?
+  presentmentSubtotal Decimal? @db.Decimal(12, 2)
+  // SHIPPING, PICK_UP, LOCAL, NONE or RETAIL, from the order's delivery method.
+  deliveryMethod  String?
+  // The shipping rate the customer chose at checkout, like "Standard" or "Express",
+  // so the vendor knows what service level to buy from their courier.
+  shippingMethod  String?
   // Who ships this order, copied from the vendor when the order came in, so changing
   // the vendor's setting later doesn't rewrite past orders.
   shippingMode    ShippingMode @default(VENDOR_SHIPS)
@@ -207,8 +215,16 @@ model VendorOrderLine {
   unitPrice  Decimal @db.Decimal(12, 2)
   // Line total after discounts and excluding tax: the base commission is taken from.
   subtotal   Decimal @db.Decimal(12, 2)
+  tax        Decimal @default(0) @db.Decimal(12, 2)
   commission Decimal @db.Decimal(12, 2)
   earnings   Decimal @db.Decimal(12, 2)
+
+  // What the buyer paid for this line, in their own currency.
+  presentmentSubtotal Decimal? @db.Decimal(12, 2)
+  // Digital goods and services don't get posted, so they change the slip's wording.
+  requiresShipping    Boolean  @default(true)
+  weight              Decimal? @db.Decimal(10, 3)
+  weightUnit          String?
 
   refundedQuantity Int     @default(0)
   refundedSubtotal Decimal @default(0) @db.Decimal(12, 2)
