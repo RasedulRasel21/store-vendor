@@ -190,6 +190,8 @@ model VendorOrder {
   vendorSeenAt DateTime?
   paidAt      DateTime?
   fulfilledAt DateTime?
+  // When a refund last changed this order, so the timeline can say when it happened.
+  refundedAt  DateTime?
   cancelledAt DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

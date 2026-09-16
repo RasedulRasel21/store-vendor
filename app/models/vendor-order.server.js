@@ -397,6 +397,7 @@ export async function splitOrder(admin, shop, orderGid) {
       refundedEarnings: round2(refundedItems - refundedCommission + refundedShipping).toFixed(2),
       placedAt,
       paidAt: PAID_STATUSES.includes(order.displayFinancialStatus) ? new Date() : null,
+      refundedAt: refunded > 0 ? new Date() : null,
     };
 
     await db.$transaction(async (tx) => {
@@ -406,6 +407,8 @@ export async function splitOrder(admin, shop, orderGid) {
           id: true,
           status: true,
           paidAt: true,
+          refunded: true,
+          refundedAt: true,
           lines: {
             select: {
               lineItemId: true,
@@ -418,6 +421,9 @@ export async function splitOrder(admin, shop, orderGid) {
       });
 
       if (existing) {
+        // A refund that grew since the last read is a new refund, and worth a timestamp.
+        const refundGrew = refunded > Number(existing.refunded);
+
         // Lines are rebuilt from Shopify, which knows the refunds; what it doesn't know is
         // how much of each line we've already put in a parcel, so that's carried over.
         const shippedByLine = new Map(
@@ -443,9 +449,21 @@ export async function splitOrder(admin, shop, orderGid) {
               existing.status,
             ),
             paidAt: existing.paidAt ?? record.paidAt,
+            refundedAt: refunded > 0 ? (refundGrew ? new Date() : existing.refundedAt) : null,
             lines: { create: keptLines },
           },
         });
+
+        if (refundGrew) {
+          await tx.vendorActivity.create({
+            data: {
+              vendorId: vendor.id,
+              action: "order.refunded",
+              actor: "shopify",
+              details: { orderName: order.name, refunded: record.refunded },
+            },
+          });
+        }
         return;
       }
 
@@ -900,6 +918,50 @@ export function getVendorOrder(shop, id) {
       shipments: { orderBy: { createdAt: "desc" } },
     },
   });
+}
+
+// Everything that happened to this vendor order, newest first, built from the order itself
+// and its shipments so there's no separate log to keep in step.
+export function orderTimeline(vendorOrder, formatAmount) {
+  const events = [];
+  const add = (at, title, description = null, link = null) => {
+    if (at) events.push({ at, title, description, link });
+  };
+
+  add(
+    vendorOrder.placedAt,
+    "Order placed",
+    vendorOrder.customerName ? `${vendorOrder.customerName} checked out` : "Checked out in your store",
+  );
+  add(vendorOrder.paidAt, "Payment received", vendorOrder.financialStatus ?? null);
+  add(
+    vendorOrder.vendorSeenAt,
+    `${vendorOrder.vendor.name} opened the order`,
+    "They can see the items and the address from here on",
+  );
+
+  for (const shipment of vendorOrder.shipments) {
+    const items = (shipment.items ?? []).map((item) => `${item.quantity} × ${item.title}`).join(", ");
+    const tracking = [shipment.trackingCompany, shipment.trackingNumber].filter(Boolean).join(" · ");
+    add(
+      shipment.createdAt,
+      shipment.shippedBy === "vendor" ? `${vendorOrder.vendor.name} shipped a parcel` : "You shipped a parcel",
+      [items || null, tracking || "No tracking"].filter(Boolean).join(" · "),
+      shipment.trackingUrl,
+    );
+  }
+
+  if (vendorOrder.status === "FULFILLED") {
+    add(vendorOrder.fulfilledAt, "Everything shipped", "The customer has been emailed");
+  }
+  add(
+    vendorOrder.refundedAt,
+    "Refunded",
+    `${formatAmount(vendorOrder.refunded)} back to the customer, ${formatAmount(vendorOrder.refundedCommission)} off your commission`,
+  );
+  add(vendorOrder.cancelledAt, "Order cancelled", "The vendor owes nothing on it");
+
+  return events.sort((a, b) => b.at.getTime() - a.at.getTime());
 }
 
 export async function vendorOrderTotals(shop) {

@@ -1,9 +1,9 @@
 import { useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
-import { getVendorOrder } from "../models/vendor-order.server";
+import { getVendorOrder, orderTimeline } from "../models/vendor-order.server";
 import { formatMoney } from "../utils/money";
-import { formatDate, VENDOR_ORDER_STATUS } from "../utils/vendor-display";
+import { formatDate, formatDateTime, VENDOR_ORDER_STATUS } from "../utils/vendor-display";
 
 export const loader = async ({ request, params }) => {
   const { session } = await authenticate.admin(request);
@@ -57,15 +57,9 @@ export const loader = async ({ request, params }) => {
         id: vendorOrder.vendor.id,
         name: vendorOrder.vendor.name,
       },
-      shipments: vendorOrder.shipments.map((shipment) => ({
-        id: shipment.id,
-        shippedBy: shipment.shippedBy === "vendor" ? "Vendor" : "Store",
-        tracking: [shipment.trackingCompany, shipment.trackingNumber].filter(Boolean).join(" · "),
-        trackingUrl: shipment.trackingUrl,
-        items: (shipment.items ?? [])
-          .map((item) => `${item.quantity} × ${item.title}`)
-          .join(", "),
-        sentAt: formatDate(shipment.createdAt),
+      timeline: orderTimeline(vendorOrder, (amount) => formatMoney(amount, currency)).map((event) => ({
+        ...event,
+        at: formatDateTime(event.at),
       })),
       lines: vendorOrder.lines.map((line) => ({
         id: line.id,
@@ -187,36 +181,24 @@ export default function VendorOrderDetail() {
         </s-paragraph>
       </s-section>
 
-      {order.shipments.length > 0 && (
-        <s-section heading="Shipments">
-          <s-table>
-            <s-table-header-row>
-              <s-table-header listSlot="primary">Items</s-table-header>
-              <s-table-header listSlot="labeled">Tracking</s-table-header>
-              <s-table-header listSlot="labeled">Sent by</s-table-header>
-              <s-table-header listSlot="labeled">Date</s-table-header>
-            </s-table-header-row>
-            <s-table-body>
-              {order.shipments.map((shipment) => (
-                <s-table-row key={shipment.id}>
-                  <s-table-cell>{shipment.items || "—"}</s-table-cell>
-                  <s-table-cell>
-                    {shipment.trackingUrl ? (
-                      <s-link href={shipment.trackingUrl} target="_blank">
-                        {shipment.tracking || "Track"}
-                      </s-link>
-                    ) : (
-                      shipment.tracking || "No tracking"
-                    )}
-                  </s-table-cell>
-                  <s-table-cell>{shipment.shippedBy}</s-table-cell>
-                  <s-table-cell>{shipment.sentAt ?? "—"}</s-table-cell>
-                </s-table-row>
-              ))}
-            </s-table-body>
-          </s-table>
-        </s-section>
-      )}
+      <s-section heading="Timeline">
+        <s-stack direction="block" gap="base">
+          {order.timeline.map((event, index) => (
+            <s-stack key={`${index}-${event.title}`} direction="block">
+              <s-text type="strong">{event.title}</s-text>
+              {event.description &&
+                (event.link ? (
+                  <s-link href={event.link} target="_blank">
+                    {event.description}
+                  </s-link>
+                ) : (
+                  <s-text color="subdued">{event.description}</s-text>
+                ))}
+              <s-text color="subdued">{event.at}</s-text>
+            </s-stack>
+          ))}
+        </s-stack>
+      </s-section>
 
       <s-section heading="Customer">
         <s-stack direction="block" gap="small">

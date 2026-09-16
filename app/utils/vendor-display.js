@@ -103,3 +103,10 @@ const dateFormat = new Intl.DateTimeFormat("en", { dateStyle: "medium" });
 export function formatDate(value) {
   return value ? dateFormat.format(new Date(value)) : null;
 }
+
+// Timelines need the time of day, not just the date, to read in the right order.
+const dateTimeFormat = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" });
+
+export function formatDateTime(value) {
+  return value ? dateTimeFormat.format(new Date(value)) : null;
+}
