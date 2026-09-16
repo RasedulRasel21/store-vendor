@@ -93,7 +93,8 @@ export default function Orders() {
       >
         Sync recent orders
       </s-button>
-      <s-button slot="secondary-actions" href={exportUrl} download>
+      {/* Opens outside the admin frame: a file download can't render inside it. */}
+      <s-button slot="secondary-actions" href={exportUrl} target="_blank">
         Export CSV
       </s-button>
 

@@ -86,6 +86,22 @@ const ORDER_FOR_SPLIT = `#graphql
           }
         }
       }
+      refunds(first: 50) {
+        id
+        refundLineItems(first: 250) {
+          nodes {
+            quantity
+            subtotalSet {
+              shopMoney {
+                amount
+              }
+            }
+            lineItem {
+              id
+            }
+          }
+        }
+      }
     }
   }`;
 
@@ -136,6 +152,27 @@ async function vendorIdsByProduct(shop, lineItems) {
   return byProduct;
 }
 
+// What's been refunded on each line, straight from Shopify, so a re-split or a manual
+// sync fixes up refunds even if the webhook was missed.
+function refundsByLineItem(order) {
+  const byLineItem = new Map();
+
+  for (const refund of order.refunds ?? []) {
+    for (const item of refund.refundLineItems?.nodes ?? []) {
+      const lineItemId = item.lineItem?.id;
+      if (!lineItemId) continue;
+
+      const current = byLineItem.get(lineItemId) ?? { quantity: 0, subtotal: 0 };
+      byLineItem.set(lineItemId, {
+        quantity: current.quantity + (item.quantity ?? 0),
+        subtotal: round2(current.subtotal + money(item.subtotalSet)),
+      });
+    }
+  }
+
+  return byLineItem;
+}
+
 // Where each line can be fulfilled from, so the vendor can ship it later.
 function fulfillmentByLineItem(order) {
   const byLineItem = new Map();
@@ -176,6 +213,7 @@ export async function splitOrder(admin, shop, orderGid) {
   ]);
   const vendorById = new Map(vendors.map((vendor) => [vendor.id, vendor]));
   const fulfillment = fulfillmentByLineItem(order);
+  const refunds = refundsByLineItem(order);
 
   // Group the order's lines by vendor and work out what each line earns.
   const groups = new Map();
@@ -193,9 +231,16 @@ export async function splitOrder(admin, shop, orderGid) {
       round2((subtotal * Number(rate.percent)) / 100 + Number(rate.fixed) * line.quantity),
     );
 
+    const refund = refunds.get(line.id);
     const group = groups.get(vendor.id) ?? { vendor, lines: [] };
     group.lines.push({
       lineItemId: line.id,
+      ...(refund
+        ? {
+            refundedQuantity: Math.min(line.quantity, refund.quantity),
+            refundedSubtotal: Math.min(subtotal, refund.subtotal).toFixed(2),
+          }
+        : {}),
       title: line.title,
       variantTitle: line.variantTitle ?? null,
       sku: line.sku ?? null,
@@ -225,6 +270,15 @@ export async function splitOrder(admin, shop, orderGid) {
     const subtotal = round2(lines.reduce((sum, line) => sum + Number(line.subtotal), 0));
     const commission = round2(lines.reduce((sum, line) => sum + Number(line.commission), 0));
     const shipping = shippingForVendor(vendor);
+    const refunded = round2(lines.reduce((sum, line) => sum + Number(line.refundedSubtotal ?? 0), 0));
+    const refundedCommission = round2(
+      lines.reduce((sum, line) => {
+        const refundedSubtotal = Number(line.refundedSubtotal ?? 0);
+        if (!refundedSubtotal) return sum;
+        const share = Number(line.subtotal) > 0 ? refundedSubtotal / Number(line.subtotal) : 1;
+        return sum + Number(line.commission) * share;
+      }, 0),
+    );
     const record = {
       status: "OPEN",
       orderName: order.name,
@@ -250,6 +304,9 @@ export async function splitOrder(admin, shop, orderGid) {
       commission: commission.toFixed(2),
       shipping: shipping.toFixed(2),
       earnings: round2(subtotal - commission + shipping).toFixed(2),
+      refunded: refunded.toFixed(2),
+      refundedCommission: refundedCommission.toFixed(2),
+      refundedEarnings: round2(refunded - refundedCommission).toFixed(2),
       placedAt,
       paidAt: PAID_STATUSES.includes(order.displayFinancialStatus) ? new Date() : null,
     };
@@ -273,31 +330,15 @@ export async function splitOrder(admin, shop, orderGid) {
       });
 
       if (existing) {
-        // Lines are rebuilt from Shopify, so refunds already recorded are carried over.
-        const refundsByLine = new Map(existing.lines.map((line) => [line.lineItemId, line]));
-        const keptLines = lines.map((line) => {
-          const previous = refundsByLine.get(line.lineItemId);
-          if (!previous) return line;
-          const refundedSubtotal = Math.min(Number(line.subtotal), Number(previous.refundedSubtotal));
-          return {
-            ...line,
-            refundedQuantity: Math.min(line.quantity, previous.refundedQuantity),
-            refundedSubtotal: refundedSubtotal.toFixed(2),
-            shippedQuantity: Math.min(line.quantity, previous.shippedQuantity),
-          };
-        });
-
-        const refunded = round2(
-          keptLines.reduce((sum, line) => sum + Number(line.refundedSubtotal ?? 0), 0),
+        // Lines are rebuilt from Shopify, which knows the refunds; what it doesn't know is
+        // how much of each line we've already put in a parcel, so that's carried over.
+        const shippedByLine = new Map(
+          existing.lines.map((line) => [line.lineItemId, line.shippedQuantity]),
         );
-        const refundedCommission = round2(
-          keptLines.reduce((sum, line) => {
-            const refundedSubtotal = Number(line.refundedSubtotal ?? 0);
-            if (!refundedSubtotal) return sum;
-            const share = Number(line.subtotal) > 0 ? refundedSubtotal / Number(line.subtotal) : 1;
-            return sum + Number(line.commission) * share;
-          }, 0),
-        );
+        const keptLines = lines.map((line) => ({
+          ...line,
+          shippedQuantity: Math.min(line.quantity, shippedByLine.get(line.lineItemId) ?? 0),
+        }));
 
         await tx.vendorOrderLine.deleteMany({ where: { vendorOrderId: existing.id } });
         await tx.vendorOrder.update({
@@ -307,9 +348,6 @@ export async function splitOrder(admin, shop, orderGid) {
             ...record,
             status: existing.status,
             paidAt: existing.paidAt ?? record.paidAt,
-            refunded: refunded.toFixed(2),
-            refundedCommission: refundedCommission.toFixed(2),
-            refundedEarnings: round2(refunded - refundedCommission).toFixed(2),
             lines: { create: keptLines },
           },
         });
