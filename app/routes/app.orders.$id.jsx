@@ -1,6 +1,7 @@
-import { useLoaderData } from "react-router";
+import { Form, useLoaderData, useNavigation } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
+import { reasonLabel, resolveIssue } from "../models/order-issue.server";
 import { getVendorOrder, orderTimeline } from "../models/vendor-order.server";
 import { RETURN_STATUS } from "../models/vendor-return.server";
 import { formatMoney } from "../utils/money";
@@ -58,6 +59,16 @@ export const loader = async ({ request, params }) => {
         id: vendorOrder.vendor.id,
         name: vendorOrder.vendor.name,
       },
+      openIssue: (() => {
+        const issue = vendorOrder.issues.find((row) => row.status === "OPEN");
+        if (!issue) return null;
+        return {
+          id: issue.id,
+          reason: reasonLabel(issue.reason),
+          note: issue.note,
+          raisedAt: formatDate(issue.createdAt),
+        };
+      })(),
       returns: vendorOrder.returns.map((vendorReturn) => ({
         id: vendorReturn.id,
         name: vendorReturn.name,
@@ -90,8 +101,24 @@ export const loader = async ({ request, params }) => {
   };
 };
 
+export const action = async ({ request }) => {
+  const { session } = await authenticate.admin(request);
+  const formData = await request.formData();
+
+  if (formData.get("intent") !== "resolveIssue") return { error: "Unknown action" };
+
+  const result = await resolveIssue(
+    session.shop,
+    String(formData.get("issueId") ?? ""),
+    String(formData.get("note") ?? ""),
+    "merchant",
+  );
+  return { error: result.error ?? null };
+};
+
 export default function VendorOrderDetail() {
   const { order } = useLoaderData();
+  const navigation = useNavigation();
   const status = VENDOR_ORDER_STATUS[order.status];
 
   return (
@@ -106,6 +133,35 @@ export default function VendorOrderDetail() {
       >
         Open in Shopify
       </s-button>
+
+      {order.openIssue && (
+        <s-banner tone="critical" heading={`${order.vendor.name} can't ship this order`}>
+          <s-stack direction="block" gap="base">
+            <s-paragraph>
+              {[order.openIssue.reason, order.openIssue.note].filter(Boolean).join(" — ")}
+              {order.openIssue.raisedAt ? ` (${order.openIssue.raisedAt})` : ""}
+            </s-paragraph>
+            <s-paragraph>
+              Cancel or refund the order in Shopify if that&apos;s the answer, then close this so the
+              vendor knows it&apos;s been dealt with.
+            </s-paragraph>
+            <Form method="post">
+              <input type="hidden" name="intent" value="resolveIssue" />
+              <input type="hidden" name="issueId" value={order.openIssue.id} />
+              <s-grid gridTemplateColumns="minmax(0,1fr) auto" gap="base" alignItems="end">
+                <s-text-field
+                  label="What you did"
+                  name="note"
+                  placeholder="Refunded the customer and cancelled the item"
+                ></s-text-field>
+                <s-button type="submit" variant="primary" loading={navigation.state === "submitting"}>
+                  Close request
+                </s-button>
+              </s-grid>
+            </Form>
+          </s-stack>
+        </s-banner>
+      )}
 
       <s-section heading="Items">
         <s-table>

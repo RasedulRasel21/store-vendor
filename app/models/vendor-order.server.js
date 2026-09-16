@@ -1,6 +1,7 @@
 import db from "../db.server";
 import { unauthenticated } from "../shopify.server";
 import { allowedCarrierNames } from "./carrier.server";
+import { reasonLabel } from "./order-issue.server";
 import { returnLabel } from "./vendor-return.server";
 import { getShopSettings } from "./settings.server";
 import { effectiveCommission } from "../utils/commission";
@@ -871,7 +872,8 @@ export async function listVendorOrders(shop, filters, page = 1) {
       take: ORDERS_PER_PAGE,
       include: {
         vendor: { select: { id: true, name: true } },
-        _count: { select: { lines: true } },
+        // An open issue is a vendor waiting on the merchant, so it earns a badge in the list.
+        _count: { select: { lines: true, issues: { where: { status: "OPEN" } } } },
       },
     }),
     db.vendorOrder.count({ where }),
@@ -918,6 +920,7 @@ export function getVendorOrder(shop, id) {
       lines: { orderBy: { title: "asc" } },
       shipments: { orderBy: { createdAt: "desc" } },
       returns: { orderBy: { requestedAt: "desc" } },
+      issues: { orderBy: { createdAt: "desc" } },
     },
   });
 }
@@ -951,6 +954,20 @@ export function orderTimeline(vendorOrder, formatAmount) {
       [items || null, tracking || "No tracking"].filter(Boolean).join(" · "),
       shipment.trackingUrl,
     );
+  }
+
+  for (const issue of vendorOrder.issues ?? []) {
+    add(
+      issue.createdAt,
+      `${vendorOrder.vendor.name} can't ship this`,
+      [reasonLabel(issue.reason), issue.note].filter(Boolean).join(" · "),
+    );
+    if (issue.status === "RESOLVED") {
+      add(issue.resolvedAt, "You closed the vendor's request", issue.reviewNote);
+    }
+    if (issue.status === "WITHDRAWN") {
+      add(issue.resolvedAt, `${vendorOrder.vendor.name} withdrew the request`, "They can ship it after all");
+    }
   }
 
   for (const vendorReturn of vendorOrder.returns ?? []) {

@@ -51,6 +51,7 @@ export const loader = async ({ request }) => {
         order.currencyCode,
       ),
       isRefunded: Number(order.refunded) > 0,
+      needsAttention: order._count.issues > 0,
       status: order.status,
       isOverdue:
         ["OPEN", "PARTIAL"].includes(order.status) && order.placedAt.getTime() < overdueBefore,
@@ -216,6 +217,7 @@ export default function Orders() {
                   <s-table-cell>
                     <s-stack direction="inline" gap="small" alignItems="center">
                       <s-link href={`/app/orders/${order.id}`}>{order.orderName}</s-link>
+                      {order.needsAttention && <s-badge tone="critical">Can&apos;t ship</s-badge>}
                       {order.isOverdue && <s-badge tone="critical">Overdue</s-badge>}
                       {order.isRefunded && <s-badge tone="warning">Refunded</s-badge>}
                     </s-stack>

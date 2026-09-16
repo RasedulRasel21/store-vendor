@@ -199,6 +199,7 @@ model VendorOrder {
   lines     VendorOrderLine[]
   shipments VendorShipment[]
   returns   VendorReturn[]
+  issues    VendorOrderIssue[]
 
   @@unique([shop, orderId, vendorId])
   @@index([shop, status])
@@ -288,6 +289,33 @@ model VendorShipment {
 
   @@index([vendorOrderId])
   @@index([fulfillmentId])
+}
+
+// A vendor saying they can't ship an order, or part of it. Cancelling and refunding stay in
+// Shopify, where the money is; this is how the vendor tells the merchant it needs doing.
+model VendorOrderIssue {
+  id            String      @id @default(cuid())
+  vendorOrderId String
+  vendorOrder   VendorOrder @relation(fields: [vendorOrderId], references: [id], onDelete: Cascade)
+
+  // OUT_OF_STOCK, DAMAGED, ADDRESS, DELAY or OTHER.
+  reason String
+  note   String?
+  status OrderIssueStatus @default(OPEN)
+  // What the merchant said when they closed it.
+  reviewNote String?
+
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+
+  @@index([vendorOrderId])
+  @@index([status])
+}
+
+enum OrderIssueStatus {
+  OPEN
+  RESOLVED
+  WITHDRAWN
 }
 
 // A return the customer asked for, kept per vendor order so a vendor only sees their own
