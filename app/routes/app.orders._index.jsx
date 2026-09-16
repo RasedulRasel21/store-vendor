@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useFetcher, useLoaderData } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -74,6 +74,32 @@ export default function Orders() {
   const shopify = useAppBridge();
   const syncing = fetcher.state !== "idle";
   const result = fetcher.state === "idle" ? fetcher.data : null;
+  const [exporting, setExporting] = useState(false);
+
+  // The file is fetched from inside the admin frame, where the session token is added,
+  // then handed to the browser to save. Opening the URL in a tab would have no session.
+  const exportCsv = async () => {
+    setExporting(true);
+    try {
+      const response = await fetch(exportUrl);
+      if (!response.ok) throw new Error(`Export failed with ${response.status}`);
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `vendor-orders-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error(error);
+      shopify.toast.show("The export couldn't be created. Try again.", { isError: true });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   useEffect(() => {
     if (!result || result.error) return;
@@ -93,8 +119,7 @@ export default function Orders() {
       >
         Sync recent orders
       </s-button>
-      {/* Opens outside the admin frame: a file download can't render inside it. */}
-      <s-button slot="secondary-actions" href={exportUrl} target="_blank">
+      <s-button slot="secondary-actions" loading={exporting} onClick={exportCsv}>
         Export CSV
       </s-button>
 

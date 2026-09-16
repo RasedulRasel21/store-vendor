@@ -384,15 +384,17 @@ const RECENT_ORDERS = `#graphql
     }
   }`;
 
-// Orders placed before the app was installed never arrive by webhook. This pulls in recent
-// ones a batch at a time, newest first, skipping orders that are already split.
+// Orders placed before the app was installed never arrive by webhook, and an order can drift
+// out of date if a webhook was missed. This reads recent orders again, newest first: missing
+// ones first, then ones already split, so refunds and edits are picked up either way.
 export async function syncRecentOrders(admin, shop, { days = 60, batchSize = 20 } = {}) {
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const query = `created_at:>=${since}`;
 
-  const candidates = [];
+  const missing = [];
+  const known = [];
   let cursor = null;
-  // Look through up to 500 recent orders to find ones still missing.
+  // Look through up to 500 recent orders.
   for (let page = 0; page < 5; page++) {
     const response = await admin.graphql(RECENT_ORDERS, { variables: { query, cursor } });
     const { data } = await response.json();
@@ -400,18 +402,19 @@ export async function syncRecentOrders(admin, shop, { days = 60, batchSize = 20 
     if (!orders) break;
 
     const ids = orders.nodes.map((order) => order.id);
-    const known = await db.vendorOrder.findMany({
+    const stored = await db.vendorOrder.findMany({
       where: { shop, orderId: { in: ids } },
       select: { orderId: true },
       distinct: ["orderId"],
     });
-    const knownIds = new Set(known.map((row) => row.orderId));
-    candidates.push(...ids.filter((id) => !knownIds.has(id)));
+    const storedIds = new Set(stored.map((row) => row.orderId));
+    for (const id of ids) (storedIds.has(id) ? known : missing).push(id);
 
     cursor = orders.pageInfo.hasNextPage ? orders.pageInfo.endCursor : null;
-    if (!cursor || candidates.length >= batchSize) break;
+    if (!cursor || missing.length + known.length >= batchSize * 5) break;
   }
 
+  const candidates = [...missing, ...known];
   const batch = candidates.slice(0, batchSize);
   let vendorOrders = 0;
   for (const orderId of batch) {
