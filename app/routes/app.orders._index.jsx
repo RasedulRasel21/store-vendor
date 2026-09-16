@@ -17,8 +17,13 @@ export const loader = async ({ request }) => {
   const status = VENDOR_ORDER_STATUSES.includes(requested) ? requested : "OPEN";
   const vendorId = params.get("vendorId") ?? "";
   const query = (params.get("q") ?? "").trim().slice(0, 100);
+  const requestedPage = Number.parseInt(params.get("page") ?? "1", 10);
 
-  const { orders, counts, vendors } = await listVendorOrders(session.shop, { status, vendorId, query });
+  const { orders, counts, vendors, page } = await listVendorOrders(
+    session.shop,
+    { status, vendorId, query },
+    Number.isFinite(requestedPage) ? requestedPage : 1,
+  );
   const overdueBefore = Date.now() - OVERDUE_DAYS * 24 * 60 * 60 * 1000;
 
   return {
@@ -27,6 +32,7 @@ export const loader = async ({ request }) => {
     vendors,
     vendorId,
     query,
+    page,
     exportUrl: `/app/orders/export?${new URLSearchParams({
       status,
       ...(vendorId ? { vendorId } : {}),
@@ -69,7 +75,7 @@ export const action = async ({ request }) => {
 };
 
 export default function Orders() {
-  const { status, counts, orders, vendors, vendorId, query, exportUrl } = useLoaderData();
+  const { status, counts, orders, vendors, vendorId, query, exportUrl, page } = useLoaderData();
   const fetcher = useFetcher();
   const shopify = useAppBridge();
   const syncing = fetcher.state !== "idle";
@@ -100,6 +106,15 @@ export default function Orders() {
       setExporting(false);
     }
   };
+
+  // Paging keeps whatever the merchant filtered by.
+  const pageHref = (number) =>
+    `/app/orders?${new URLSearchParams({
+      status,
+      ...(vendorId ? { vendorId } : {}),
+      ...(query ? { q: query } : {}),
+      ...(number > 1 ? { page: String(number) } : {}),
+    })}`;
 
   useEffect(() => {
     if (!result || result.error) return;
@@ -214,6 +229,33 @@ export default function Orders() {
               ))}
             </s-table-body>
           </s-table>
+        )}
+
+        {(page.hasPrevious || page.hasNext) && (
+          <>
+            <s-divider></s-divider>
+            <s-box padding="base">
+              <s-stack direction="inline" gap="base" alignItems="center" justifyContent="space-between">
+                <s-text color="subdued">{`${page.from}–${page.to} of ${page.total}`}</s-text>
+                <s-button-group gap="none">
+                  <s-button
+                    slot="secondary-actions"
+                    href={pageHref(page.current - 1)}
+                    disabled={!page.hasPrevious}
+                    icon="chevron-left"
+                    accessibilityLabel="Previous page"
+                  ></s-button>
+                  <s-button
+                    slot="secondary-actions"
+                    href={pageHref(page.current + 1)}
+                    disabled={!page.hasNext}
+                    icon="chevron-right"
+                    accessibilityLabel="Next page"
+                  ></s-button>
+                </s-button-group>
+              </s-stack>
+            </s-box>
+          </>
         )}
       </s-section>
     </s-page>

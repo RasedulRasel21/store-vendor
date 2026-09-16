@@ -838,17 +838,24 @@ export function vendorOrderFilter(shop, { status, vendorId, query }) {
   };
 }
 
-export async function listVendorOrders(shop, filters) {
-  const [orders, grouped, vendors] = await Promise.all([
+export const ORDERS_PER_PAGE = 25;
+
+export async function listVendorOrders(shop, filters, page = 1) {
+  const where = vendorOrderFilter(shop, filters);
+  const current = Math.max(1, Math.trunc(page) || 1);
+
+  const [orders, matching, grouped, vendors] = await Promise.all([
     db.vendorOrder.findMany({
-      where: vendorOrderFilter(shop, filters),
+      where,
       orderBy: { placedAt: "desc" },
-      take: 100,
+      skip: (current - 1) * ORDERS_PER_PAGE,
+      take: ORDERS_PER_PAGE,
       include: {
         vendor: { select: { id: true, name: true } },
         _count: { select: { lines: true } },
       },
     }),
+    db.vendorOrder.count({ where }),
     db.vendorOrder.groupBy({ by: ["status"], where: { shop }, _count: { _all: true } }),
     // Only vendors that actually have orders are worth filtering by.
     db.vendor.findMany({
@@ -862,6 +869,15 @@ export async function listVendorOrders(shop, filters) {
     orders,
     vendors,
     counts: Object.fromEntries(grouped.map((row) => [row.status, row._count._all])),
+    page: {
+      current,
+      // The first row on this page, so the table can say which slice you're looking at.
+      from: matching === 0 ? 0 : (current - 1) * ORDERS_PER_PAGE + 1,
+      to: Math.min(current * ORDERS_PER_PAGE, matching),
+      total: matching,
+      hasPrevious: current > 1,
+      hasNext: current * ORDERS_PER_PAGE < matching,
+    },
   };
 }
 
