@@ -1,6 +1,7 @@
 import db from "../db.server";
 import { unauthenticated } from "../shopify.server";
 import { allowedCarrierNames } from "./carrier.server";
+import { returnLabel } from "./vendor-return.server";
 import { getShopSettings } from "./settings.server";
 import { effectiveCommission } from "../utils/commission";
 import { round2 } from "../utils/money";
@@ -916,6 +917,7 @@ export function getVendorOrder(shop, id) {
       vendor: true,
       lines: { orderBy: { title: "asc" } },
       shipments: { orderBy: { createdAt: "desc" } },
+      returns: { orderBy: { requestedAt: "desc" } },
     },
   });
 }
@@ -949,6 +951,17 @@ export function orderTimeline(vendorOrder, formatAmount) {
       [items || null, tracking || "No tracking"].filter(Boolean).join(" · "),
       shipment.trackingUrl,
     );
+  }
+
+  for (const vendorReturn of vendorOrder.returns ?? []) {
+    const items = (vendorReturn.items ?? []).map((item) => `${item.quantity} × ${item.title}`).join(", ");
+    const reasons = [...new Set((vendorReturn.items ?? []).map((item) => item.reason).filter(Boolean))];
+    const label = [returnLabel(vendorReturn.status), vendorReturn.name].filter(Boolean).join(" · ");
+
+    add(vendorReturn.updatedAt, label, [items, reasons.join(", ")].filter(Boolean).join(" · "));
+    if (vendorReturn.status !== "REQUESTED") {
+      add(vendorReturn.requestedAt, `Return requested${vendorReturn.name ? ` · ${vendorReturn.name}` : ""}`, items);
+    }
   }
 
   if (vendorOrder.status === "FULFILLED") {

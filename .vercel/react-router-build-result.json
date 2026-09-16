@@ -22,6 +22,7 @@
       "routes/webhooks.collections": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/webhooks.compliance": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/api.portal.fulfill": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/webhooks.returns": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/auth.login": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/auth.$": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/_index": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
@@ -151,6 +152,15 @@
         "parentId": "root",
         "file": "app/routes/api.portal.fulfill.jsx",
         "path": "api/portal/fulfill",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/webhooks.returns": {
+        "id": "routes/webhooks.returns",
+        "parentId": "root",
+        "file": "app/routes/webhooks.returns.jsx",
+        "path": "webhooks/returns",
         "config": {
           "runtime": "nodejs"
         }
@@ -412,6 +422,12 @@
         "file": "routes/api.portal.fulfill.jsx",
         "path": "api/portal/fulfill"
       },
+      "routes/webhooks.returns": {
+        "id": "routes/webhooks.returns",
+        "parentId": "root",
+        "file": "routes/webhooks.returns.jsx",
+        "path": "webhooks/returns"
+      },
       "routes/auth.login": {
         "id": "routes/auth.login",
         "parentId": "root",
@@ -599,6 +615,11 @@
             "id": "routes/api.portal.fulfill",
             "file": "routes/api.portal.fulfill.jsx",
             "path": "api/portal/fulfill"
+          },
+          {
+            "id": "routes/webhooks.returns",
+            "file": "routes/webhooks.returns.jsx",
+            "path": "webhooks/returns"
           },
           {
             "id": "routes/auth.login",

@@ -2,6 +2,7 @@ import { useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { getVendorOrder, orderTimeline } from "../models/vendor-order.server";
+import { RETURN_STATUS } from "../models/vendor-return.server";
 import { formatMoney } from "../utils/money";
 import { formatDate, formatDateTime, VENDOR_ORDER_STATUS } from "../utils/vendor-display";
 
@@ -57,6 +58,17 @@ export const loader = async ({ request, params }) => {
         id: vendorOrder.vendor.id,
         name: vendorOrder.vendor.name,
       },
+      returns: vendorOrder.returns.map((vendorReturn) => ({
+        id: vendorReturn.id,
+        name: vendorReturn.name,
+        status: vendorReturn.status,
+        label: RETURN_STATUS[vendorReturn.status]?.label ?? "Return",
+        tone: RETURN_STATUS[vendorReturn.status]?.tone ?? "neutral",
+        items: (vendorReturn.items ?? [])
+          .map((item) => [`${item.quantity} × ${item.title}`, item.reason, item.note].filter(Boolean).join(" · "))
+          .join("; "),
+        requestedAt: formatDate(vendorReturn.requestedAt),
+      })),
       timeline: orderTimeline(vendorOrder, (amount) => formatMoney(amount, currency)).map((event) => ({
         ...event,
         at: formatDateTime(event.at),
@@ -180,6 +192,27 @@ export default function VendorOrderDetail() {
             : "Shipping goes to the vendor only when the whole order is theirs and they ship it themselves. Payouts of these earnings come next."}
         </s-paragraph>
       </s-section>
+
+      {order.returns.length > 0 && (
+        <s-section heading="Returns">
+          <s-stack direction="block" gap="base">
+            {order.returns.map((vendorReturn) => (
+              <s-stack key={vendorReturn.id} direction="block">
+                <s-stack direction="inline" gap="small" alignItems="center">
+                  <s-text type="strong">{vendorReturn.name ?? "Return"}</s-text>
+                  <s-badge tone={vendorReturn.tone}>{vendorReturn.label}</s-badge>
+                </s-stack>
+                <s-text color="subdued">{vendorReturn.items}</s-text>
+                <s-text color="subdued">{`Asked for ${vendorReturn.requestedAt ?? "—"}`}</s-text>
+              </s-stack>
+            ))}
+          </s-stack>
+          <s-paragraph color="subdued">
+            Returns are handled in Shopify. Refunding one takes the money back off the vendor&apos;s
+            earnings and your commission automatically.
+          </s-paragraph>
+        </s-section>
+      )}
 
       <s-section heading="Timeline">
         <s-stack direction="block" gap="base">

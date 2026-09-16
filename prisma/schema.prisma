@@ -198,6 +198,7 @@ model VendorOrder {
 
   lines     VendorOrderLine[]
   shipments VendorShipment[]
+  returns   VendorReturn[]
 
   @@unique([shop, orderId, vendorId])
   @@index([shop, status])
@@ -287,6 +288,28 @@ model VendorShipment {
 
   @@index([vendorOrderId])
   @@index([fulfillmentId])
+}
+
+// A return the customer asked for, kept per vendor order so a vendor only sees their own
+// items coming back. The money side stays with refunds; this is the request and its state.
+model VendorReturn {
+  id            String      @id @default(cuid())
+  vendorOrderId String
+  vendorOrder   VendorOrder @relation(fields: [vendorOrderId], references: [id], onDelete: Cascade)
+
+  // Shopify Return GID, and the name the customer sees, like "#1001-R1".
+  returnId String
+  name     String?
+  // REQUESTED, OPEN, DECLINED, CANCELED or CLOSED, straight from Shopify.
+  status   String
+  // [{ lineId, title, quantity, reason, note }]
+  items    Json
+
+  requestedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([vendorOrderId, returnId])
+  @@index([vendorOrderId])
 }
 
 enum PayoutMethod {

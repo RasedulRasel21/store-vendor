@@ -70,6 +70,8 @@ const ACTIVITY_LABELS = {
   "order.fulfilled": "Order marked shipped",
   "order.partly_fulfilled": "Part of an order shipped",
   "order.refunded": "Order refunded",
+  "order.return_requested": "Return requested",
+  "order.return_updated": "Return updated",
   "carrier.requested": "Courier requested",
   "carrier.approved": "Courier approved",
   "carrier.rejected": "Courier request rejected",
