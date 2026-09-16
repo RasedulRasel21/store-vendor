@@ -42,6 +42,14 @@ export const CHANGE_REQUEST_TYPE = {
   PAYOUT: "Payout details",
 };
 
+export const VENDOR_ORDER_STATUS = {
+  OPEN: { label: "To ship", tone: "warning" },
+  FULFILLED: { label: "Shipped", tone: "success" },
+  CANCELLED: { label: "Cancelled", tone: "neutral" },
+};
+
+export const VENDOR_ORDER_STATUSES = Object.keys(VENDOR_ORDER_STATUS);
+
 export const VENDOR_USER_STATUS = {
   INVITED: { label: "Invited", tone: "info" },
   ACTIVE: { label: "Active", tone: "success" },
@@ -56,6 +64,8 @@ const ACTIVITY_LABELS = {
   "vendor.fulfillment_updated": "Shipping and COD changed",
   "vendor_user.invite_accepted": "Portal invite accepted",
   "vendor.contact_updated": "Contact details updated by vendor",
+  "order.received": "Order received",
+  "order.fulfilled": "Order marked shipped",
   "vendor.payout_change_requested": "Payout change requested",
   "vendor.payout_change_cancelled": "Payout change request withdrawn",
   "vendor.payout_change_approved": "Payout change approved",

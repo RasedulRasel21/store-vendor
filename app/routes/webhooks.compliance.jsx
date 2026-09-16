@@ -22,6 +22,7 @@ export const action = async ({ request }) => {
       // Deleting vendors cascades to their users, product links and activity.
       const shopDomain = payload.shop_domain ?? shop;
       await db.$transaction([
+        db.vendorOrder.deleteMany({ where: { shop: shopDomain } }),
         db.vendorProduct.deleteMany({ where: { shop: shopDomain } }),
         db.shopCollection.deleteMany({ where: { shop: shopDomain } }),
         db.vendor.deleteMany({ where: { shop: shopDomain } }),
