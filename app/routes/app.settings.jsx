@@ -98,6 +98,8 @@ export const action = async ({ request }) => {
   return { intent: "commission", saved: true };
 };
 
+const CARRIER_INTENTS = ["approveCarrier", "rejectCarrier", "addCarrier"];
+
 const CARRIER_STATUS = {
   PENDING: { label: "Waiting for you", tone: "warning" },
   APPROVED: { label: "Available", tone: "success" },
@@ -125,9 +127,9 @@ export default function Settings() {
 
   return (
     <s-page heading="Settings" inlineSize="small">
-      <Form method="post">
-        <input type="hidden" name="intent" value="commission" />
-        <s-section heading="Default commission">
+      <s-section heading="Default commission">
+        <Form method="post">
+          <input type="hidden" name="intent" value="commission" />
           <s-stack direction="block" gap="base">
             <s-paragraph color="subdued">
               What you keep from each vendor sale, unless a vendor has a custom
@@ -168,12 +170,12 @@ export default function Settings() {
               </s-button>
             </s-stack>
           </s-stack>
-        </s-section>
-      </Form>
+        </Form>
+      </s-section>
 
-      <Form method="post">
-        <input type="hidden" name="intent" value="syncCollections" />
-        <s-section heading="Collections for vendors">
+      <s-section heading="Collections for vendors">
+        <Form method="post">
+          <input type="hidden" name="intent" value="syncCollections" />
           <s-stack direction="block" gap="base">
             <s-paragraph color="subdued">
               Vendors can add their products to your manual collections. Smart
@@ -194,14 +196,18 @@ export default function Settings() {
               </s-button>
             </s-stack>
           </s-stack>
-        </s-section>
-      </Form>
+        </Form>
+      </s-section>
 
       <s-section heading="Couriers vendors can use">
         <s-stack direction="block" gap="base">
           <s-paragraph color="subdued">
             {`Vendors pick from ${carriers.fromShopify} couriers Shopify recognises in your country, so tracking links work by themselves. If their courier isn't there, they ask you to add it.`}
           </s-paragraph>
+
+          {CARRIER_INTENTS.includes(actionData?.intent) && actionData.error && (
+            <s-banner tone="critical">{actionData.error}</s-banner>
+          )}
 
           {carriers.requests.length > 0 && (
             <s-table>
@@ -255,20 +261,27 @@ export default function Settings() {
             </s-table>
           )}
 
+          <s-divider></s-divider>
+
           <Form method="post">
             <input type="hidden" name="intent" value="addCarrier" />
-            <s-grid gridTemplateColumns="minmax(0,1fr) minmax(0,1.4fr) auto" gap="base" alignItems="end">
-              <s-text-field label="Add a courier" name="carrierName" placeholder="Pathao" required></s-text-field>
-              <s-text-field
-                label="Tracking link"
-                name="trackingUrlTemplate"
-                placeholder="https://courier.com/track?id={tracking_number}"
-                details="Optional. {tracking_number} is replaced with the number."
-              ></s-text-field>
-              <s-button type="submit" loading={submittingIntent === "addCarrier"}>
-                Add
-              </s-button>
-            </s-grid>
+            <s-stack direction="block" gap="base">
+              <s-heading>Add a courier</s-heading>
+              <s-grid gridTemplateColumns="minmax(0,1fr) minmax(0,1fr)" gap="base">
+                <s-text-field label="Name" name="carrierName" placeholder="Pathao" required></s-text-field>
+                <s-text-field
+                  label="Tracking link"
+                  name="trackingUrlTemplate"
+                  placeholder="https://courier.com/track?id={tracking_number}"
+                  details="Optional. {tracking_number} is replaced with the number."
+                ></s-text-field>
+              </s-grid>
+              <s-stack direction="inline">
+                <s-button type="submit" loading={submittingIntent === "addCarrier"}>
+                  Add courier
+                </s-button>
+              </s-stack>
+            </s-stack>
           </Form>
         </s-stack>
       </s-section>
