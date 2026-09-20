@@ -1,5 +1,6 @@
 import { authenticate } from "../shopify.server";
 import { updatePaymentStatus } from "../models/vendor-order.server";
+import { handleWebhookOnce } from "../models/webhook-event.server";
 
 // orders/paid and orders/updated both land here: they keep the payment status current,
 // which matters for cash on delivery, where an order is paid days after it's placed.
@@ -15,14 +16,14 @@ const STATUS_BY_PAYLOAD = {
 };
 
 export const action = async ({ request }) => {
-  const { shop, topic, payload } = await authenticate.webhook(request);
+  const { shop, topic, payload, webhookId } = await authenticate.webhook(request);
 
   console.log(`Received ${topic} webhook for ${shop}`);
 
-  const orderGid = payload?.admin_graphql_api_id ?? (payload?.id ? `gid://shopify/Order/${payload.id}` : null);
-  const financialStatus = STATUS_BY_PAYLOAD[payload?.financial_status] ?? null;
+  return handleWebhookOnce({ webhookId, shop, topic }, async () => {
+    const orderGid = payload?.admin_graphql_api_id ?? (payload?.id ? `gid://shopify/Order/${payload.id}` : null);
+    const financialStatus = STATUS_BY_PAYLOAD[payload?.financial_status] ?? null;
 
-  if (orderGid) await updatePaymentStatus(shop, orderGid, financialStatus);
-
-  return new Response();
+    if (orderGid) await updatePaymentStatus(shop, orderGid, financialStatus);
+  });
 };
