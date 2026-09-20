@@ -3,12 +3,10 @@ import { useFetcher, useLoaderData } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
-import { listVendorOrders, syncRecentOrders } from "../models/vendor-order.server";
+import { getShopSettings } from "../models/settings.server";
+import { listVendorOrders, overdueSince, syncRecentOrders } from "../models/vendor-order.server";
 import { formatMoney } from "../utils/money";
 import { formatDate, VENDOR_ORDER_STATUS, VENDOR_ORDER_STATUSES } from "../utils/vendor-display";
-
-// A vendor order still unshipped after this many days needs chasing.
-const OVERDUE_DAYS = 3;
 
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
@@ -18,13 +16,22 @@ export const loader = async ({ request }) => {
   const vendorId = params.get("vendorId") ?? "";
   const query = (params.get("q") ?? "").trim().slice(0, 100);
   const requestedPage = Number.parseInt(params.get("page") ?? "1", 10);
+  // Overdue is a view of its own: it cuts across the statuses rather than sitting beside them.
+  const onlyOverdue = params.get("overdue") === "1";
 
-  const { orders, counts, vendors, page } = await listVendorOrders(
+  const settings = await getShopSettings(session.shop);
+  const { orders, counts, vendors, page, overdue } = await listVendorOrders(
     session.shop,
-    { status, vendorId, query },
+    {
+      status,
+      vendorId,
+      query,
+      overdue: onlyOverdue,
+      fulfillmentDays: settings.fulfillmentDays,
+    },
     Number.isFinite(requestedPage) ? requestedPage : 1,
   );
-  const overdueBefore = Date.now() - OVERDUE_DAYS * 24 * 60 * 60 * 1000;
+  const overdueBefore = overdueSince(settings.fulfillmentDays).getTime();
 
   return {
     status,
@@ -33,8 +40,12 @@ export const loader = async ({ request }) => {
     vendorId,
     query,
     page,
+    onlyOverdue,
+    overdue,
+    fulfillmentDays: settings.fulfillmentDays,
     exportUrl: `/app/orders/export?${new URLSearchParams({
       status,
+      ...(onlyOverdue ? { overdue: "1" } : {}),
       ...(vendorId ? { vendorId } : {}),
       ...(query ? { q: query } : {}),
     })}`,
@@ -76,7 +87,8 @@ export const action = async ({ request }) => {
 };
 
 export default function Orders() {
-  const { status, counts, orders, vendors, vendorId, query, exportUrl, page } = useLoaderData();
+  const { status, counts, orders, vendors, vendorId, query, exportUrl, page, onlyOverdue, overdue, fulfillmentDays } =
+    useLoaderData();
   const fetcher = useFetcher();
   const shopify = useAppBridge();
   const syncing = fetcher.state !== "idle";
@@ -112,6 +124,7 @@ export default function Orders() {
   const pageHref = (number) =>
     `/app/orders?${new URLSearchParams({
       status,
+      ...(onlyOverdue ? { overdue: "1" } : {}),
       ...(vendorId ? { vendorId } : {}),
       ...(query ? { q: query } : {}),
       ...(number > 1 ? { page: String(number) } : {}),
@@ -156,17 +169,37 @@ export default function Orders() {
               return (
                 <s-button
                   key={value}
-                  variant={value === status ? "primary" : "secondary"}
+                  variant={value === status && !onlyOverdue ? "primary" : "secondary"}
                   href={`/app/orders?${params}`}
                 >
                   {`${VENDOR_ORDER_STATUS[value].label} (${counts[value] ?? 0})`}
                 </s-button>
               );
             })}
+            {overdue > 0 && (
+              <s-button
+                variant={onlyOverdue ? "primary" : "secondary"}
+                tone="critical"
+                href={`/app/orders?${new URLSearchParams({
+                  overdue: "1",
+                  ...(vendorId ? { vendorId } : {}),
+                  ...(query ? { q: query } : {}),
+                })}`}
+              >
+                {`Overdue (${overdue})`}
+              </s-button>
+            )}
           </s-stack>
+
+          {onlyOverdue && (
+            <s-banner tone="warning" heading={`${overdue} ${overdue === 1 ? "order is" : "orders are"} overdue`}>
+              {`These were placed more than ${fulfillmentDays} ${fulfillmentDays === 1 ? "day" : "days"} ago and still aren't shipped. Chase the vendor, or ship it for them from the order.`}
+            </s-banner>
+          )}
 
           <form method="get" action="/app/orders">
             <input type="hidden" name="status" value={status} />
+            {onlyOverdue && <input type="hidden" name="overdue" value="1" />}
             <s-grid gridTemplateColumns="minmax(0,1fr) minmax(0,14rem) auto" gap="base" alignItems="end">
               <s-search-field
                 label="Search orders"

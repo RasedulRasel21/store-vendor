@@ -9,6 +9,7 @@ import {
   getShopCurrency,
   getShopSettings,
   updateDefaultCommission,
+  updateFulfillmentDays,
 } from "../models/settings.server";
 import { formatDate } from "../utils/vendor-display";
 
@@ -42,6 +43,7 @@ export const loader = async ({ request }) => {
       percent: String(settings.commissionPercent),
       fixed: String(settings.commissionFixed),
     },
+    fulfillmentDays: settings.fulfillmentDays,
     collections: {
       count: collections.count,
       syncedAt: collections.syncedAt ? formatDate(collections.syncedAt) : null,
@@ -77,6 +79,11 @@ export const action = async ({ request }) => {
     return { intent, error: result.error ?? null };
   }
 
+  if (intent === "fulfillmentDays") {
+    const result = await updateFulfillmentDays(session.shop, formData.get("days"));
+    return { intent, error: result.error ?? null, saved: Boolean(result.days) };
+  }
+
   if (intent === "syncCollections") {
     try {
       const count = await syncCollections(admin, session.shop);
@@ -107,7 +114,7 @@ const CARRIER_STATUS = {
 };
 
 export default function Settings() {
-  const { commission, currencyCode, collections, carriers } = useLoaderData();
+  const { commission, currencyCode, collections, carriers, fulfillmentDays } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const shopify = useAppBridge();
@@ -166,6 +173,39 @@ export default function Settings() {
                 variant="primary"
                 loading={submittingIntent === "commission"}
               >
+                Save
+              </s-button>
+            </s-stack>
+          </s-stack>
+        </Form>
+      </s-section>
+
+      <s-section heading="Shipping deadline">
+        <Form method="post">
+          <input type="hidden" name="intent" value="fulfillmentDays" />
+          <s-stack direction="block" gap="base">
+            <s-paragraph color="subdued">
+              How long a vendor has to ship an order. After that it&apos;s marked overdue for you
+              and for them, so it can be chased before the customer starts asking.
+            </s-paragraph>
+            {actionData?.intent === "fulfillmentDays" && actionData.error && (
+              <s-banner tone="critical">{actionData.error}</s-banner>
+            )}
+            <s-grid gridTemplateColumns="minmax(0,14rem)" gap="base">
+              <s-number-field
+                label="Ship within"
+                name="days"
+                suffix="days"
+                inputMode="numeric"
+                step={1}
+                min={1}
+                max={60}
+                defaultValue={String(fulfillmentDays)}
+                required
+              ></s-number-field>
+            </s-grid>
+            <s-stack direction="inline">
+              <s-button type="submit" loading={submittingIntent === "fulfillmentDays"}>
                 Save
               </s-button>
             </s-stack>

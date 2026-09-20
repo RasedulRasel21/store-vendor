@@ -6,6 +6,7 @@ import { authenticate } from "../shopify.server";
 import { reasonLabel, resolveIssue } from "../models/order-issue.server";
 import db from "../db.server";
 import { carrierChoices } from "../models/carrier.server";
+import { getShopSettings } from "../models/settings.server";
 import {
   fulfillVendorOrder,
   getVendorOrder,
@@ -33,7 +34,8 @@ export const loader = async ({ request, params }) => {
     0,
   );
   const canShip = ["OPEN", "PARTIAL"].includes(vendorOrder.status) && remaining > 0;
-  const [carriers, otherVendors] = await Promise.all([
+  const [settings, carriers, otherVendors] = await Promise.all([
+    getShopSettings(session.shop),
     canShip ? carrierChoices(session.shop) : null,
     db.vendor.findMany({
       where: { shop: session.shop, status: "ACTIVE", id: { not: vendorOrder.vendorId } },
@@ -50,9 +52,18 @@ export const loader = async ({ request, params }) => {
       label: `${line.quantity} × ${[line.title, line.variantTitle].filter(Boolean).join(" · ")}`,
     }));
 
+  // The deadline only matters while something is still waiting to go out.
+  const dueAt = new Date(vendorOrder.placedAt.getTime() + settings.fulfillmentDays * 24 * 60 * 60 * 1000);
+  const lateBy = Math.floor((Date.now() - dueAt.getTime()) / (24 * 60 * 60 * 1000));
+
   return {
     otherVendors,
     movableLines,
+    due: canShip
+      ? lateBy >= 0
+        ? `Overdue: it was due ${formatDate(dueAt)}, ${lateBy === 0 ? "today" : `${lateBy} ${lateBy === 1 ? "day" : "days"} ago`}`
+        : `Due to ship by ${formatDate(dueAt)}`
+      : null,
     carriers: carriers
       ? [...new Set([...carriers.approved.map((carrier) => carrier.name), ...carriers.fromShopify])]
       : [],
@@ -190,7 +201,7 @@ export const action = async ({ request, params }) => {
 };
 
 export default function VendorOrderDetail() {
-  const { order, carriers, movableLines, otherVendors } = useLoaderData();
+  const { order, carriers, movableLines, otherVendors, due } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const shopify = useAppBridge();
@@ -484,6 +495,7 @@ export default function VendorOrderDetail() {
             </s-text>
           )}
           <s-text color="subdued">{`Placed ${order.placedAt ?? "—"}`}</s-text>
+          {due && <s-text color="subdued">{due}</s-text>}
           {order.fulfilledAt && <s-text color="subdued">{`Shipped ${order.fulfilledAt}`}</s-text>}
         </s-stack>
       </s-section>

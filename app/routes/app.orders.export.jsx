@@ -1,4 +1,5 @@
 import { authenticate } from "../shopify.server";
+import { getShopSettings } from "../models/settings.server";
 import { vendorOrdersForExport } from "../models/vendor-order.server";
 
 const COLUMNS = [
@@ -29,10 +30,13 @@ export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
   const params = new URL(request.url).searchParams;
 
+  const settings = await getShopSettings(session.shop);
   const orders = await vendorOrdersForExport(session.shop, {
     status: params.get("status"),
     vendorId: params.get("vendorId") ?? undefined,
     query: params.get("q") ?? undefined,
+    overdue: params.get("overdue") === "1",
+    fulfillmentDays: settings.fulfillmentDays,
   });
 
   const rows = orders.map((order) =>

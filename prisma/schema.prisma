@@ -48,6 +48,8 @@ model ShopSettings {
   collectionsSyncedAt DateTime?
   // The payment customization that runs the cod-rules Function for this shop.
   codRulesCustomizationId String?
+  // Days a vendor has to ship an order before it counts as overdue.
+  fulfillmentDays   Int      @default(3)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 }

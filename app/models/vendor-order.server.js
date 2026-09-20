@@ -863,12 +863,23 @@ export async function fulfillVendorOrder(
   return { ok: true, status };
 }
 
-export function vendorOrderFilter(shop, { status, vendorId, query }) {
+// An order is overdue when it's still waiting to ship after the store's deadline.
+export function overdueSince(days) {
+  return new Date(Date.now() - Math.max(1, days) * 24 * 60 * 60 * 1000);
+}
+
+export const OVERDUE_WHERE = (days) => ({
+  status: { in: ["OPEN", "PARTIAL"] },
+  placedAt: { lt: overdueSince(days) },
+});
+
+export function vendorOrderFilter(shop, { status, vendorId, query, overdue, fulfillmentDays }) {
   const search = query?.trim();
 
   return {
     shop,
     ...(VENDOR_ORDER_STATUSES.includes(status) ? { status } : {}),
+    ...(overdue ? OVERDUE_WHERE(fulfillmentDays) : {}),
     ...(vendorId ? { vendorId } : {}),
     ...(search
       ? {
@@ -888,7 +899,7 @@ export async function listVendorOrders(shop, filters, page = 1) {
   const where = vendorOrderFilter(shop, filters);
   const current = Math.max(1, Math.trunc(page) || 1);
 
-  const [orders, matching, grouped, vendors] = await Promise.all([
+  const [orders, matching, grouped, vendors, overdue] = await Promise.all([
     db.vendorOrder.findMany({
       where,
       orderBy: { placedAt: "desc" },
@@ -908,11 +919,13 @@ export async function listVendorOrders(shop, filters, page = 1) {
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
+    db.vendorOrder.count({ where: { shop, ...OVERDUE_WHERE(filters.fulfillmentDays) } }),
   ]);
 
   return {
     orders,
     vendors,
+    overdue,
     counts: Object.fromEntries(grouped.map((row) => [row.status, row._count._all])),
     page: {
       current,

@@ -41,6 +41,23 @@ export async function ensureShopCurrency(admin, shop) {
   return currencyCode;
 }
 
+// How long a vendor has to ship before the order is chased. Kept sane so a typo can't
+// make every order overdue at once, or never.
+export async function updateFulfillmentDays(shop, input) {
+  const days = Math.trunc(Number(input));
+  if (!Number.isFinite(days) || days < 1 || days > 60) {
+    return { error: "Choose between 1 and 60 days" };
+  }
+
+  await db.shopSettings.upsert({
+    where: { shop },
+    update: { fulfillmentDays: days },
+    create: { shop, fulfillmentDays: days },
+  });
+
+  return { days };
+}
+
 export function dismissSetupGuide(shop) {
   const now = new Date();
   return db.shopSettings.upsert({
