@@ -63,6 +63,12 @@ export const loader = async ({ request }) => {
       ),
       isRefunded: Number(order.refunded) > 0,
       needsAttention: order._count.issues > 0,
+      // Worth calling out once it's late: nobody has even taken it on.
+      notAccepted:
+        !order.acceptedAt &&
+        order.shippingMode === "VENDOR_SHIPS" &&
+        ["OPEN", "PARTIAL"].includes(order.status) &&
+        order.placedAt.getTime() < overdueBefore,
       status: order.status,
       isOverdue:
         ["OPEN", "PARTIAL"].includes(order.status) && order.placedAt.getTime() < overdueBefore,
@@ -252,6 +258,7 @@ export default function Orders() {
                       <s-link href={`/app/orders/${order.id}`}>{order.orderName}</s-link>
                       {order.needsAttention && <s-badge tone="critical">Can&apos;t ship</s-badge>}
                       {order.isOverdue && <s-badge tone="critical">Overdue</s-badge>}
+                      {order.notAccepted && <s-badge tone="warning">Not accepted</s-badge>}
                       {order.isRefunded && <s-badge tone="warning">Refunded</s-badge>}
                     </s-stack>
                   </s-table-cell>

@@ -76,6 +76,13 @@ export const loader = async ({ request, params }) => {
       status: vendorOrder.status,
       financialStatus: vendorOrder.financialStatus,
       placedAt: formatDate(vendorOrder.placedAt),
+      // Only worth saying while the vendor still has something to do about it.
+      accepted:
+        vendorOrder.shippingMode === "STORE_SHIPS" || !["OPEN", "PARTIAL"].includes(vendorOrder.status)
+          ? null
+          : vendorOrder.acceptedAt
+            ? `Vendor took it on ${formatDate(vendorOrder.acceptedAt)}`
+            : "The vendor hasn't taken it on yet",
       fulfilledAt: formatDate(vendorOrder.fulfilledAt),
       customerName: vendorOrder.customerName,
       customerEmail: vendorOrder.customerEmail,
@@ -496,6 +503,7 @@ export default function VendorOrderDetail() {
           )}
           <s-text color="subdued">{`Placed ${order.placedAt ?? "—"}`}</s-text>
           {due && <s-text color="subdued">{due}</s-text>}
+          {order.accepted && <s-text color="subdued">{order.accepted}</s-text>}
           {order.fulfilledAt && <s-text color="subdued">{`Shipped ${order.fulfilledAt}`}</s-text>}
         </s-stack>
       </s-section>

@@ -844,6 +844,11 @@ export async function fulfillVendorOrder(
     return { error: message ?? "Shopify couldn't mark these items shipped. Try again." };
   }
 
+  // Shipping says more than accepting does, so a vendor who goes straight to it counts.
+  if (!byStore && !vendorOrder.acceptedAt) {
+    await db.vendorOrder.update({ where: { id: vendorOrder.id }, data: { acceptedAt: new Date() } });
+  }
+
   const status = await saveShipment(vendorOrder, {
     fulfillmentId: fulfillment.id,
     tracking,
@@ -1008,6 +1013,7 @@ export function orderTimeline(vendorOrder, formatAmount) {
     `${vendorOrder.vendor.name} opened the order`,
     "They can see the items and the address from here on",
   );
+  add(vendorOrder.acceptedAt, `${vendorOrder.vendor.name} took the order on`, "They said they're packing it");
 
   for (const shipment of vendorOrder.shipments) {
     const items = (shipment.items ?? []).map((item) => `${item.quantity} × ${item.title}`).join(", ");

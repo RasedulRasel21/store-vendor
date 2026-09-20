@@ -190,6 +190,9 @@ model VendorOrder {
   placedAt    DateTime
   // When the vendor first opened this order in the portal; drives their "new orders" count.
   vendorSeenAt DateTime?
+  // When the vendor said they're on it. Opening an order isn't the same as taking it on,
+  // so this is what tells the merchant someone is actually packing it.
+  acceptedAt  DateTime?
   paidAt      DateTime?
   fulfilledAt DateTime?
   // When a refund last changed this order, so the timeline can say when it happened.
