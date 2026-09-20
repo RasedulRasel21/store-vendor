@@ -242,13 +242,24 @@ export async function splitOrder(admin, shop, orderGid) {
   if (!order) return { vendorOrders: 0 };
 
   const lineItems = order.lineItems?.nodes ?? [];
-  const vendorByProduct = await vendorIdsByProduct(shop, lineItems);
-  if (!vendorByProduct.size) return { vendorOrders: 0 };
+  const [vendorByProduct, moved] = await Promise.all([
+    vendorIdsByProduct(shop, lineItems),
+    // A line the merchant moved by hand beats whatever the product says.
+    db.orderLineVendor.findMany({
+      where: { shop, orderId: order.id },
+      select: { lineItemId: true, vendorId: true },
+    }),
+  ]);
+  const vendorByLineItem = new Map(moved.map((line) => [line.lineItemId, line.vendorId]));
+  if (!vendorByProduct.size && !vendorByLineItem.size) return { vendorOrders: 0 };
 
   const [settings, vendors] = await Promise.all([
     getShopSettings(shop),
     db.vendor.findMany({
-      where: { shop, id: { in: [...new Set(vendorByProduct.values())] } },
+      where: {
+        shop,
+        id: { in: [...new Set([...vendorByProduct.values(), ...vendorByLineItem.values()])] },
+      },
     }),
   ]);
   const vendorById = new Map(vendors.map((vendor) => [vendor.id, vendor]));
@@ -268,7 +279,7 @@ export async function splitOrder(admin, shop, orderGid) {
   // Group the order's lines by vendor and work out what each line earns.
   const groups = new Map();
   for (const line of lineItems) {
-    const vendorId = vendorByProduct.get(line.product?.id);
+    const vendorId = vendorByLineItem.get(line.id) ?? vendorByProduct.get(line.product?.id);
     const vendor = vendorId ? vendorById.get(vendorId) : null;
     if (!vendor) continue;
 
@@ -925,8 +936,8 @@ export function vendorOrdersForExport(shop, filters) {
   });
 }
 
-export function getVendorOrder(shop, id) {
-  return db.vendorOrder.findFirst({
+export async function getVendorOrder(shop, id) {
+  const vendorOrder = await db.vendorOrder.findFirst({
     where: { id, shop },
     include: {
       vendor: true,
@@ -936,6 +947,33 @@ export function getVendorOrder(shop, id) {
       issues: { orderBy: { createdAt: "desc" } },
     },
   });
+  if (!vendorOrder) return null;
+
+  // Lines moved to or away from this vendor, so the timeline can show the hand-over.
+  const moves = await db.orderLineVendor.findMany({
+    where: {
+      shop,
+      orderId: vendorOrder.orderId,
+      OR: [{ vendorId: vendorOrder.vendorId }, { fromVendorId: vendorOrder.vendorId }],
+    },
+    orderBy: { createdAt: "desc" },
+    include: { vendor: { select: { name: true } } },
+  });
+  const fromIds = [...new Set(moves.map((move) => move.fromVendorId).filter(Boolean))];
+  const fromNames = fromIds.length
+    ? await db.vendor.findMany({ where: { id: { in: fromIds } }, select: { id: true, name: true } })
+    : [];
+  const nameById = new Map(fromNames.map((vendor) => [vendor.id, vendor.name]));
+
+  vendorOrder.lineMoves = moves.map((move) => ({
+    title: move.title,
+    createdAt: move.createdAt,
+    mine: move.vendorId === vendorOrder.vendorId,
+    toName: move.vendor.name,
+    fromName: move.fromVendorId ? (nameById.get(move.fromVendorId) ?? "another vendor") : null,
+  }));
+
+  return vendorOrder;
 }
 
 // Everything that happened to this vendor order, newest first, built from the order itself
@@ -966,6 +1004,14 @@ export function orderTimeline(vendorOrder, formatAmount) {
       shipment.shippedBy === "vendor" ? `${vendorOrder.vendor.name} shipped a parcel` : "You shipped a parcel",
       [items || null, tracking || "No tracking"].filter(Boolean).join(" · "),
       shipment.trackingUrl,
+    );
+  }
+
+  for (const move of vendorOrder.lineMoves ?? []) {
+    add(
+      move.createdAt,
+      move.mine ? `${move.title} moved here` : `${move.title} moved to another vendor`,
+      move.mine ? `You moved it from ${move.fromName ?? "another vendor"}` : `You moved it to ${move.toName}`,
     );
   }
 
@@ -1005,6 +1051,71 @@ export function orderTimeline(vendorOrder, formatAmount) {
   add(vendorOrder.cancelledAt, "Order cancelled", "The vendor owes nothing on it");
 
   return events.sort((a, b) => b.at.getTime() - a.at.getTime());
+}
+
+// A vendor order with nothing left in it is a leftover from moving lines away.
+async function dropEmptyVendorOrders(shop, orderId) {
+  const empty = await db.vendorOrder.findMany({
+    where: { shop, orderId, lines: { none: {} }, shipments: { none: {} } },
+    select: { id: true },
+  });
+  if (empty.length) {
+    await db.vendorOrder.deleteMany({ where: { id: { in: empty.map((order) => order.id) } } });
+  }
+}
+
+// Moves one line to another vendor: the move is recorded, then the order is split again so
+// commission, shipping and statuses are worked out by the same code as always.
+export async function reassignOrderLine(admin, shop, { vendorOrderId, lineId, vendorId, actor }) {
+  const line = await db.vendorOrderLine.findFirst({
+    where: { id: lineId, vendorOrder: { id: vendorOrderId, shop } },
+    include: {
+      vendorOrder: {
+        select: { id: true, orderId: true, orderName: true, vendorId: true, vendor: { select: { name: true } } },
+      },
+    },
+  });
+  if (!line) return { error: "That item isn't on this order" };
+
+  const from = line.vendorOrder;
+  if (from.vendorId === vendorId) return { error: `That item is already with ${from.vendor.name}` };
+  // A shipped line has a fulfillment in the first vendor's name, so moving it would lie.
+  if (line.shippedQuantity > 0) return { error: "That item has already been shipped" };
+  if (line.refundedQuantity >= line.quantity) return { error: "That item was refunded" };
+
+  const target = await db.vendor.findFirst({
+    where: { id: vendorId, shop, status: "ACTIVE" },
+    select: { id: true, name: true },
+  });
+  if (!target) return { error: "Choose an active vendor" };
+
+  await db.orderLineVendor.upsert({
+    where: { shop_orderId_lineItemId: { shop, orderId: from.orderId, lineItemId: line.lineItemId } },
+    update: { vendorId: target.id, fromVendorId: from.vendorId, title: line.title, movedBy: actor },
+    create: {
+      shop,
+      orderId: from.orderId,
+      lineItemId: line.lineItemId,
+      vendorId: target.id,
+      fromVendorId: from.vendorId,
+      title: line.title,
+      movedBy: actor,
+    },
+  });
+
+  await splitOrder(admin, shop, from.orderId);
+  await dropEmptyVendorOrders(shop, from.orderId);
+
+  const details = { orderName: from.orderName, title: line.title, from: from.vendor.name, to: target.name };
+  await db.vendorActivity.createMany({
+    data: [
+      { vendorId: from.vendorId, action: "order.line_moved_out", actor, details },
+      { vendorId: target.id, action: "order.line_moved_in", actor, details },
+    ],
+  });
+
+  const stillThere = await db.vendorOrder.findUnique({ where: { id: from.id }, select: { id: true } });
+  return { ok: true, movedTo: target.name, sourceGone: !stillThere };
 }
 
 // The vendor side of one Shopify order, for the block on the admin's order page.

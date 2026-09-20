@@ -1,11 +1,17 @@
 import { useEffect } from "react";
-import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
+import { Form, redirect, useActionData, useLoaderData, useNavigation } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { reasonLabel, resolveIssue } from "../models/order-issue.server";
+import db from "../db.server";
 import { carrierChoices } from "../models/carrier.server";
-import { fulfillVendorOrder, getVendorOrder, orderTimeline } from "../models/vendor-order.server";
+import {
+  fulfillVendorOrder,
+  getVendorOrder,
+  orderTimeline,
+  reassignOrderLine,
+} from "../models/vendor-order.server";
 import { RETURN_STATUS } from "../models/vendor-return.server";
 import { formatMoney } from "../utils/money";
 import { formatDate, formatDateTime, VENDOR_ORDER_STATUS } from "../utils/vendor-display";
@@ -27,9 +33,26 @@ export const loader = async ({ request, params }) => {
     0,
   );
   const canShip = ["OPEN", "PARTIAL"].includes(vendorOrder.status) && remaining > 0;
-  const carriers = canShip ? await carrierChoices(session.shop) : null;
+  const [carriers, otherVendors] = await Promise.all([
+    canShip ? carrierChoices(session.shop) : null,
+    db.vendor.findMany({
+      where: { shop: session.shop, status: "ACTIVE", id: { not: vendorOrder.vendorId } },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+  ]);
+
+  // Only a line that hasn't shipped or been refunded can change hands.
+  const movableLines = vendorOrder.lines
+    .filter((line) => line.shippedQuantity === 0 && line.refundedQuantity < line.quantity)
+    .map((line) => ({
+      id: line.id,
+      label: `${line.quantity} × ${[line.title, line.variantTitle].filter(Boolean).join(" · ")}`,
+    }));
 
   return {
+    otherVendors,
+    movableLines,
     carriers: carriers
       ? [...new Set([...carriers.approved.map((carrier) => carrier.name), ...carriers.fromShopify])]
       : [],
@@ -118,7 +141,7 @@ export const loader = async ({ request, params }) => {
 };
 
 export const action = async ({ request, params }) => {
-  const { session } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const formData = await request.formData();
   const intent = String(formData.get("intent") ?? "");
 
@@ -130,6 +153,18 @@ export const action = async ({ request, params }) => {
       "merchant",
     );
     return { intent, error: result.error ?? null };
+  }
+
+  if (intent === "moveLine") {
+    const result = await reassignOrderLine(admin, session.shop, {
+      vendorOrderId: params.id,
+      lineId: String(formData.get("lineId") ?? ""),
+      vendorId: String(formData.get("vendorId") ?? ""),
+      actor: "merchant",
+    });
+    // Moving the last line away leaves nothing here to come back to.
+    if (result.sourceGone) return redirect("/app/orders");
+    return { intent, error: result.error ?? null, movedTo: result.movedTo ?? null };
   }
 
   if (intent === "ship") {
@@ -155,7 +190,7 @@ export const action = async ({ request, params }) => {
 };
 
 export default function VendorOrderDetail() {
-  const { order, carriers } = useLoaderData();
+  const { order, carriers, movableLines, otherVendors } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const shopify = useAppBridge();
@@ -165,6 +200,7 @@ export default function VendorOrderDetail() {
 
   useEffect(() => {
     if (actionData?.shipped) shopify.toast.show("Marked shipped, and the customer has been emailed");
+    if (actionData?.movedTo) shopify.toast.show(`Moved to ${actionData.movedTo}`);
   }, [actionData, shopify]);
 
   return (
@@ -294,6 +330,46 @@ export default function VendorOrderDetail() {
             : "Shipping goes to the vendor only when the whole order is theirs and they ship it themselves. Payouts of these earnings come next."}
         </s-paragraph>
       </s-section>
+
+      {movableLines.length > 0 && otherVendors.length > 0 && (
+        <s-section heading="Move an item to another vendor">
+          <s-stack direction="block" gap="base">
+            <s-paragraph color="subdued">
+              For an item sold under the wrong vendor. It moves with its money, and stays moved
+              when the order is read again. Shipped and refunded items can&apos;t be moved.
+            </s-paragraph>
+            {actionData?.intent === "moveLine" && actionData.error && (
+              <s-banner tone="critical">{actionData.error}</s-banner>
+            )}
+            <Form method="post">
+              <input type="hidden" name="intent" value="moveLine" />
+              <s-stack direction="block" gap="base">
+                <s-grid gridTemplateColumns="minmax(0,1fr) minmax(0,1fr)" gap="base">
+                  <s-select label="Item" name="lineId" required>
+                    {movableLines.map((line) => (
+                      <s-option key={line.id} value={line.id}>
+                        {line.label}
+                      </s-option>
+                    ))}
+                  </s-select>
+                  <s-select label="Move to" name="vendorId" required>
+                    {otherVendors.map((vendor) => (
+                      <s-option key={vendor.id} value={vendor.id}>
+                        {vendor.name}
+                      </s-option>
+                    ))}
+                  </s-select>
+                </s-grid>
+                <s-stack direction="inline">
+                  <s-button type="submit" loading={submittingIntent === "moveLine"}>
+                    Move item
+                  </s-button>
+                </s-stack>
+              </s-stack>
+            </Form>
+          </s-stack>
+        </s-section>
+      )}
 
       {order.canShip && (
         <s-section heading="Ship for the vendor">

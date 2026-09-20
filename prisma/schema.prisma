@@ -291,6 +291,28 @@ model VendorShipment {
   @@index([fulfillmentId])
 }
 
+// A line the merchant moved to a different vendor by hand. Re-reading an order takes the
+// vendor from the product, so the move is kept here to survive every later sync.
+model OrderLineVendor {
+  id         String @id @default(cuid())
+  shop       String
+  // The Shopify order and line item GIDs, which outlive our own rows.
+  orderId    String
+  lineItemId String
+
+  vendorId     String
+  vendor       Vendor  @relation("MovedToVendor", fields: [vendorId], references: [id], onDelete: Cascade)
+  fromVendorId String?
+
+  title     String
+  movedBy   String
+  createdAt DateTime @default(now())
+
+  @@unique([shop, orderId, lineItemId])
+  @@index([shop, orderId])
+  @@index([vendorId])
+}
+
 // A vendor saying they can't ship an order, or part of it. Cancelling and refunding stay in
 // Shopify, where the money is; this is how the vendor tells the merchant it needs doing.
 model VendorOrderIssue {
@@ -415,6 +437,7 @@ model Vendor {
   productSubmissions ProductSubmission[]
   changeRequests     VendorChangeRequest[]
   orders             VendorOrder[]
+  movedOrderLines    OrderLineVendor[]     @relation("MovedToVendor")
 
   @@unique([shop, handle])
   @@unique([shop, email])
