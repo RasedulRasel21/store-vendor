@@ -1007,6 +1007,24 @@ export function orderTimeline(vendorOrder, formatAmount) {
   return events.sort((a, b) => b.at.getTime() - a.at.getTime());
 }
 
+// The vendor side of one Shopify order, for the block on the admin's order page.
+export function vendorOrdersForShopifyOrder(shop, orderId) {
+  return db.vendorOrder.findMany({
+    where: { shop, orderId },
+    orderBy: { createdAt: "asc" },
+    include: {
+      vendor: { select: { id: true, name: true } },
+      lines: { select: { title: true, variantTitle: true, quantity: true } },
+      shipments: {
+        orderBy: { createdAt: "desc" },
+        select: { trackingCompany: true, trackingNumber: true, trackingUrl: true, shippedBy: true },
+      },
+      returns: { where: { status: { in: ["REQUESTED", "OPEN"] } }, select: { id: true } },
+      issues: { where: { status: "OPEN" }, select: { id: true } },
+    },
+  });
+}
+
 export async function vendorOrderTotals(shop) {
   const [open, earnings] = await Promise.all([
     db.vendorOrder.count({ where: { shop, status: { in: ["OPEN", "PARTIAL"] } } }),

@@ -1,0 +1,12 @@
+api_version = "2026-04"
+
+[[extensions]]
+name = "t:name"
+description = "t:description"
+handle = "order-vendor-split"
+type = "ui_extension"
+
+  # Only one target is allowed per admin block extension.
+  [[extensions.targeting]]
+  module = "./src/OrderVendorSplit.jsx"
+  target = "admin.order-details.block.render"
