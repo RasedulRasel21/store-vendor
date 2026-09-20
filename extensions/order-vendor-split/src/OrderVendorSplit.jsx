@@ -30,9 +30,10 @@ function VendorSplit() {
     };
   }, [orderId]);
 
+  // The summary is what shows while the block is collapsed, so it always says something.
   if (failed) {
     return (
-      <s-admin-block heading="Vendor split">
+      <s-admin-block heading="Vendor split" collapsedSummary="Couldn't be loaded">
         <s-banner tone="critical">
           The vendor split couldn&apos;t be loaded. Open StoreVendor to check this order.
         </s-banner>
@@ -42,7 +43,7 @@ function VendorSplit() {
 
   if (!split) {
     return (
-      <s-admin-block heading="Vendor split">
+      <s-admin-block heading="Vendor split" collapsedSummary="Loading…">
         <s-spinner accessibilityLabel="Loading the vendor split"></s-spinner>
       </s-admin-block>
     );
@@ -50,7 +51,7 @@ function VendorSplit() {
 
   if (!split.vendorOrders.length) {
     return (
-      <s-admin-block heading="Vendor split">
+      <s-admin-block heading="Vendor split" collapsedSummary="No vendor items">
         <s-text color="subdued">
           Nothing in this order belongs to a vendor, so there&apos;s no commission on it.
         </s-text>
