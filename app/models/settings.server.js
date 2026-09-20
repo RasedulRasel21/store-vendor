@@ -58,6 +58,47 @@ export async function updateFulfillmentDays(shop, input) {
   return { days };
 }
 
+const SHOP_LOCATIONS = `#graphql
+  query ShopLocations {
+    locations(first: 50, includeInactive: false) {
+      nodes {
+        id
+        name
+        fulfillsOnlineOrders
+      }
+    }
+  }`;
+
+export async function shopLocations(admin) {
+  const response = await admin.graphql(SHOP_LOCATIONS);
+  const { data } = await response.json();
+  return data?.locations?.nodes ?? [];
+}
+
+// Where returned stock goes back on the shelf. Vendors can't restock until it's set,
+// because the app shouldn't guess which of a merchant's locations to credit.
+export async function updateRestockLocation(shop, locationId, locations) {
+  if (!locationId) {
+    await db.shopSettings.upsert({
+      where: { shop },
+      update: { restockLocationId: null, restockLocationName: null },
+      create: { shop },
+    });
+    return { cleared: true };
+  }
+
+  const location = locations.find((candidate) => candidate.id === locationId);
+  if (!location) return { error: "That location isn't in this store" };
+
+  await db.shopSettings.upsert({
+    where: { shop },
+    update: { restockLocationId: location.id, restockLocationName: location.name },
+    create: { shop, restockLocationId: location.id, restockLocationName: location.name },
+  });
+
+  return { location };
+}
+
 export function dismissSetupGuide(shop) {
   const now = new Date();
   return db.shopSettings.upsert({

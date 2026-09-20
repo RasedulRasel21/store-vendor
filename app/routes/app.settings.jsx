@@ -8,8 +8,10 @@ import { getCollectionSyncStatus, syncCollections } from "../models/collection.s
 import {
   getShopCurrency,
   getShopSettings,
+  shopLocations,
   updateDefaultCommission,
   updateFulfillmentDays,
+  updateRestockLocation,
 } from "../models/settings.server";
 import { formatDate } from "../utils/vendor-display";
 
@@ -17,16 +19,19 @@ const ACTOR = "merchant";
 
 export const loader = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
-  const [settings, currencyCode, collections, carriers, choices] = await Promise.all([
+  const [settings, currencyCode, collections, carriers, choices, locations] = await Promise.all([
     getShopSettings(session.shop),
     getShopCurrency(admin),
     getCollectionSyncStatus(session.shop),
     listCarrierRequests(session.shop),
     carrierChoices(session.shop),
+    shopLocations(admin),
   ]);
 
   return {
     currencyCode,
+    locations: locations.map((location) => ({ id: location.id, name: location.name })),
+    restockLocationId: settings.restockLocationId ?? "",
     carriers: {
       fromShopify: choices.fromShopify.length,
       requests: carriers.map((carrier) => ({
@@ -79,6 +84,15 @@ export const action = async ({ request }) => {
     return { intent, error: result.error ?? null };
   }
 
+  if (intent === "restockLocation") {
+    const result = await updateRestockLocation(
+      session.shop,
+      String(formData.get("locationId") ?? ""),
+      await shopLocations(admin),
+    );
+    return { intent, error: result.error ?? null, saved: !result.error };
+  }
+
   if (intent === "fulfillmentDays") {
     const result = await updateFulfillmentDays(session.shop, formData.get("days"));
     return { intent, error: result.error ?? null, saved: Boolean(result.days) };
@@ -114,7 +128,8 @@ const CARRIER_STATUS = {
 };
 
 export default function Settings() {
-  const { commission, currencyCode, collections, carriers, fulfillmentDays } = useLoaderData();
+  const { commission, currencyCode, collections, carriers, fulfillmentDays, locations, restockLocationId } =
+    useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const shopify = useAppBridge();
@@ -209,6 +224,35 @@ export default function Settings() {
                 Save
               </s-button>
             </s-stack>
+          </s-stack>
+        </Form>
+      </s-section>
+
+      <s-section heading="Returns">
+        <Form method="post">
+          <input type="hidden" name="intent" value="restockLocation" />
+          <s-stack direction="block" gap="base">
+            <s-paragraph color="subdued">
+              Vendors can approve or turn down returns of their own items, and put returned stock
+              back once it reaches them. Pick where that stock lands; until you do, they can&apos;t
+              restock. Refunds stay with you.
+            </s-paragraph>
+            {actionData?.intent === "restockLocation" && actionData.error && (
+              <s-banner tone="critical">{actionData.error}</s-banner>
+            )}
+            <s-grid gridTemplateColumns="minmax(0,20rem) auto" gap="base" alignItems="end">
+              <s-select label="Restock returns to" name="locationId" value={restockLocationId}>
+                <s-option value="">Don&apos;t let vendors restock</s-option>
+                {locations.map((location) => (
+                  <s-option key={location.id} value={location.id}>
+                    {location.name}
+                  </s-option>
+                ))}
+              </s-select>
+              <s-button type="submit" loading={submittingIntent === "restockLocation"}>
+                Save
+              </s-button>
+            </s-grid>
           </s-stack>
         </Form>
       </s-section>

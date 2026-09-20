@@ -50,6 +50,10 @@ model ShopSettings {
   codRulesCustomizationId String?
   // Days a vendor has to ship an order before it counts as overdue.
   fulfillmentDays   Int      @default(3)
+  // Where returned stock goes back on the shelf. Until the merchant picks one, vendors
+  // can't restock, because guessing a location would move stock to the wrong shop floor.
+  restockLocationId   String?
+  restockLocationName String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 }
