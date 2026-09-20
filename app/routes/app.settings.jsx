@@ -6,6 +6,11 @@ import { authenticate } from "../shopify.server";
 import { addCarrier, approveCarrier, carrierChoices, listCarrierRequests, rejectCarrier } from "../models/carrier.server";
 import { getCollectionSyncStatus, syncCollections } from "../models/collection.server";
 import {
+  connectLabelAccount,
+  disconnectLabelAccount,
+  LABEL_PROVIDERS,
+} from "../models/label-account.server";
+import {
   getShopCurrency,
   getShopSettings,
   shopLocations,
@@ -49,6 +54,15 @@ export const loader = async ({ request }) => {
       fixed: String(settings.commissionFixed),
     },
     fulfillmentDays: settings.fulfillmentDays,
+    // The key itself never leaves the server; only whether one is connected.
+    labels: {
+      provider: settings.labelProvider ?? "",
+      account: settings.labelAccount ?? null,
+      providers: Object.entries(LABEL_PROVIDERS).map(([value, provider]) => ({
+        value,
+        label: provider.label,
+      })),
+    },
     collections: {
       count: collections.count,
       syncedAt: collections.syncedAt ? formatDate(collections.syncedAt) : null,
@@ -82,6 +96,20 @@ export const action = async ({ request }) => {
       trackingUrlTemplate: String(formData.get("trackingUrlTemplate") ?? ""),
     });
     return { intent, error: result.error ?? null };
+  }
+
+  if (intent === "connectLabels") {
+    const result = await connectLabelAccount(
+      session.shop,
+      String(formData.get("provider") ?? ""),
+      String(formData.get("apiKey") ?? ""),
+    );
+    return { intent, error: result.error ?? null, saved: Boolean(result.account) };
+  }
+
+  if (intent === "disconnectLabels") {
+    await disconnectLabelAccount(session.shop);
+    return { intent, error: null, saved: true };
   }
 
   if (intent === "restockLocation") {
@@ -128,7 +156,7 @@ const CARRIER_STATUS = {
 };
 
 export default function Settings() {
-  const { commission, currencyCode, collections, carriers, fulfillmentDays, locations, restockLocationId } =
+  const { commission, currencyCode, collections, carriers, fulfillmentDays, locations, restockLocationId, labels } =
     useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
@@ -281,6 +309,63 @@ export default function Settings() {
             </s-stack>
           </s-stack>
         </Form>
+      </s-section>
+
+      <s-section heading="Shipping labels">
+        <s-stack direction="block" gap="base">
+          <s-paragraph color="subdued">
+            Connect your own Shippo or EasyPost account and vendors will be able to buy labels for
+            their parcels. You&apos;re billed by the carrier, not by us, and the key is encrypted
+            before it&apos;s stored.
+          </s-paragraph>
+          {actionData?.intent === "connectLabels" && actionData.error && (
+            <s-banner tone="critical">{actionData.error}</s-banner>
+          )}
+
+          {labels.account ? (
+            <s-stack direction="block" gap="base">
+              <s-stack direction="inline" gap="small" alignItems="center">
+                <s-badge tone="success">Connected</s-badge>
+                <s-text>{labels.account}</s-text>
+              </s-stack>
+              <Form method="post">
+                <input type="hidden" name="intent" value="disconnectLabels" />
+                <s-stack direction="inline">
+                  <s-button type="submit" tone="critical" loading={submittingIntent === "disconnectLabels"}>
+                    Disconnect
+                  </s-button>
+                </s-stack>
+              </Form>
+            </s-stack>
+          ) : (
+            <Form method="post">
+              <input type="hidden" name="intent" value="connectLabels" />
+              <s-stack direction="block" gap="base">
+                <s-grid gridTemplateColumns="minmax(0,14rem) minmax(0,1fr)" gap="base">
+                  <s-select label="Provider" name="provider" value="shippo">
+                    {labels.providers.map((provider) => (
+                      <s-option key={provider.value} value={provider.value}>
+                        {provider.label}
+                      </s-option>
+                    ))}
+                  </s-select>
+                  <s-password-field
+                    label="API key"
+                    name="apiKey"
+                    autocomplete="off"
+                    details="Checked with the provider before it's saved."
+                    required
+                  ></s-password-field>
+                </s-grid>
+                <s-stack direction="inline">
+                  <s-button type="submit" loading={submittingIntent === "connectLabels"}>
+                    Connect
+                  </s-button>
+                </s-stack>
+              </s-stack>
+            </Form>
+          )}
+        </s-stack>
       </s-section>
 
       <s-section heading="Couriers vendors can use">

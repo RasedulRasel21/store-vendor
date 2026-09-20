@@ -54,6 +54,11 @@ model ShopSettings {
   // can't restock, because guessing a location would move stock to the wrong shop floor.
   restockLocationId   String?
   restockLocationName String?
+  // Shipping labels, bought through the merchant's own carrier account. The key is stored
+  // encrypted and never leaves the server; labelAccount is just what to show in Settings.
+  labelProvider  String?
+  labelApiKey    String?
+  labelAccount   String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 }
