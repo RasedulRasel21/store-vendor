@@ -5,6 +5,7 @@
   "license": "UNLICENSED",
   "type": "module",
   "dependencies": {
+    "@preact/signals": "^2.11.2",
     "@shopify/ui-extensions": "2026.4.4",
     "preact": "^10.27.0"
   }

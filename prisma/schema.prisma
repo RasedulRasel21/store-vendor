@@ -293,6 +293,18 @@ model VendorShipment {
   @@index([fulfillmentId])
 }
 
+// One row per webhook Shopify delivers. Shopify retries on any slow or failed response, so
+// the id is claimed before the work starts and released if the work throws.
+model WebhookEvent {
+  // The X-Shopify-Webhook-Id header, which is the same across retries of one event.
+  id         String   @id
+  shop       String
+  topic      String
+  receivedAt DateTime @default(now())
+
+  @@index([receivedAt])
+}
+
 // A line the merchant moved to a different vendor by hand. Re-reading an order takes the
 // vendor from the product, so the move is kept here to survive every later sync.
 model OrderLineVendor {

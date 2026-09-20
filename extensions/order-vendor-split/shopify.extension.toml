@@ -4,6 +4,7 @@ api_version = "2026-04"
 name = "t:name"
 description = "t:description"
 handle = "order-vendor-split"
+uid = "c9bf63f7-7d18-d5a4-a2e3-0c5a2aa2e2ff078340cc"
 type = "ui_extension"
 
   # Only one target is allowed per admin block extension.
