@@ -1144,7 +1144,7 @@ export function vendorOrdersForShopifyOrder(shop, orderId) {
     orderBy: { createdAt: "asc" },
     include: {
       vendor: { select: { id: true, name: true } },
-      lines: { select: { title: true, variantTitle: true, quantity: true } },
+      lines: { select: { title: true, variantTitle: true, quantity: true, imageUrl: true } },
       shipments: {
         orderBy: { createdAt: "desc" },
         select: { trackingCompany: true, trackingNumber: true, trackingUrl: true, shippedBy: true },

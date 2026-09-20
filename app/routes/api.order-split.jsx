@@ -4,15 +4,7 @@ import { formatMoney } from "../utils/money";
 import { VENDOR_ORDER_STATUS } from "../utils/vendor-display";
 
 const ORDER_GID = /^gid:\/\/shopify\/Order\/\d+$/;
-const ITEMS_SHOWN = 3;
-
-function itemsLine(lines) {
-  const shown = lines
-    .slice(0, ITEMS_SHOWN)
-    .map((line) => `${line.quantity} × ${[line.title, line.variantTitle].filter(Boolean).join(" · ")}`);
-  const rest = lines.length - shown.length;
-  return [...shown, rest > 0 ? `and ${rest} more` : null].filter(Boolean).join(", ");
-}
+const ITEMS_SHOWN = 4;
 
 function trackingLines(shipments) {
   return shipments.map((shipment) => ({
@@ -52,9 +44,9 @@ export const loader = async ({ request }) => {
       summary: vendorOrders.length
         ? `${vendorOrders.length} ${vendorOrders.length === 1 ? "vendor" : "vendors"} · you keep ${formatMoney(commission, currency)}`
         : "No vendor items",
-      footer: vendorOrders.length
-        ? `You owe the vendors ${formatMoney(earnings, currency)} on this order, and keep ${formatMoney(commission, currency)}.`
-        : "",
+      totals: vendorOrders.length
+        ? { earnings: formatMoney(earnings, currency), commission: formatMoney(commission, currency) }
+        : null,
       vendorOrders: vendorOrders.map((order) => {
         const isRefunded = Number(order.refunded) > 0;
         return {
@@ -65,12 +57,16 @@ export const loader = async ({ request }) => {
           needsAttention: order.issues.length > 0,
           hasReturn: order.returns.length > 0,
           isRefunded,
-          items: itemsLine(order.lines),
-          money: [
-            `You keep ${formatMoney(Number(order.commission) - Number(order.refundedCommission), currency)}`,
-            `they earn ${formatMoney(Number(order.earnings) - Number(order.refundedEarnings), currency)}`,
-            order.shippingMode === "STORE_SHIPS" ? "you ship it" : "they ship it",
-          ].join(" · "),
+          items: order.lines.slice(0, ITEMS_SHOWN).map((line) => ({
+            title: line.title,
+            variantTitle: line.variantTitle,
+            quantity: line.quantity,
+            imageUrl: line.imageUrl,
+          })),
+          moreItems: Math.max(0, order.lines.length - ITEMS_SHOWN),
+          commission: formatMoney(Number(order.commission) - Number(order.refundedCommission), currency),
+          earnings: formatMoney(Number(order.earnings) - Number(order.refundedEarnings), currency),
+          ships: order.shippingMode === "STORE_SHIPS" ? "You" : order.vendor.name,
           tracking: trackingLines(order.shipments),
         };
       }),

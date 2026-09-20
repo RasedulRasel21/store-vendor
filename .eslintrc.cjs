@@ -19,7 +19,8 @@ module.exports = {
     commonjs: true,
     es6: true,
   },
-  ignorePatterns: ["!**/.server", "!**/.client"],
+  // shopify.d.ts files are written by the CLI, so they're not ours to lint.
+  ignorePatterns: ["!**/.server", "!**/.client", "extensions/**/shopify.d.ts"],
 
   // Base config
   extends: ["eslint:recommended"],
@@ -74,6 +75,14 @@ module.exports = {
         "plugin:import/recommended",
         "plugin:import/typescript",
       ],
+    },
+
+    // Admin UI extensions: Preact, not React, so React's prop rules don't apply.
+    {
+      files: ["extensions/**/*.{js,jsx}"],
+      rules: {
+        "react/prop-types": "off",
+      },
     },
 
     // Node
