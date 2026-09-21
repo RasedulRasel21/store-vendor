@@ -84,6 +84,10 @@ export const loader = async ({ request }) => {
         : null,
       reference: payout.reference,
       note: payout.note,
+      // What actually goes out when the vendor is paid in another currency.
+      converted: payout.payoutCurrency
+        ? `Send ${formatMoney(payout.payoutAmount, payout.payoutCurrency)} (at ${Number(payout.fxRate)})`
+        : null,
       requested: Boolean(payout.requestedAt),
       createdAt: formatDate(payout.createdAt),
       paidAt: formatDate(payout.paidAt),
@@ -370,7 +374,12 @@ export default function Payouts() {
                       {payout.requested && <s-text color="subdued">Asked for by the vendor</s-text>}
                     </s-stack>
                   </s-table-cell>
-                  <s-table-cell>{payout.amount}</s-table-cell>
+                  <s-table-cell>
+                    <s-stack direction="block">
+                      <s-text>{payout.amount}</s-text>
+                      {payout.converted && <s-text color="subdued">{payout.converted}</s-text>}
+                    </s-stack>
+                  </s-table-cell>
                   <s-table-cell>
                     <s-stack direction="block">
                       <s-text>{payout.method}</s-text>

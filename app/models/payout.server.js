@@ -28,6 +28,21 @@ async function logPayoutActivity(tx, vendorId, action, actor, details) {
   await tx.vendorActivity.create({ data: { vendorId, action, actor, details } });
 }
 
+// A vendor who wants paying in their own currency gets the amount converted at the store's
+// rate, with the rate kept on the payout so the conversion can always be traced. Without a
+// rate for that currency they're paid in the shop currency, as before.
+export function convertForVendor(settings, wanted, amount, shopCurrency) {
+  if (!settings?.payoutFxEnabled || !wanted || wanted === shopCurrency) return {};
+  const rate = Number(settings.payoutFxRates?.[wanted]);
+  if (!(rate > 0)) return {};
+
+  return {
+    payoutCurrency: wanted,
+    fxRate: rate.toFixed(8),
+    payoutAmount: round2(amount * rate).toFixed(2),
+  };
+}
+
 // Sets money aside for a vendor. With no amount it takes everything available.
 async function setAside(tx, { shop, vendorId, amount, actor, payoutId, note }) {
   // One vendor at a time: two clicks on "Pay" must not both read the same balance.
@@ -67,6 +82,7 @@ async function setAside(tx, { shop, vendorId, amount, actor, payoutId, note }) {
     method: vendor.payoutMethod,
     details: vendor.payoutDetails ?? undefined,
     note: note?.trim().slice(0, 500) || undefined,
+    ...convertForVendor(settings, vendor.payoutDetails?.currency, wanted, currencyCode),
   };
 
   const payout = payoutId

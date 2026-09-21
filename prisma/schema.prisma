@@ -96,6 +96,11 @@ model ShopSettings {
   us1099kTransactions Int     @default(200)
   dac7MinTransactions Int     @default(30)
   dac7MinAmount       Decimal @default(2000) @db.Decimal(12, 2)
+  // Paying vendors in their own currency. Rates are the merchant's, per one unit of the
+  // shop currency, like { "USD": "0.0082" }: the bank sets the real rate, so these only
+  // say how much to send and are copied onto each payout.
+  payoutFxEnabled Boolean @default(false)
+  payoutFxRates   Json?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 }
@@ -408,6 +413,12 @@ model Payout {
   details Json?
   // The bank or wallet transaction reference, entered once the money is sent.
   reference String?
+
+  // When the vendor is paid in another currency: what to send, and the rate used. The
+  // amount above stays in the shop currency, because that's what the vendor is owed.
+  payoutCurrency String?
+  payoutAmount   Decimal? @db.Decimal(14, 2)
+  fxRate         Decimal? @db.Decimal(18, 8)
   note      String?
 
   // Set when the vendor asked for it rather than the merchant starting it.

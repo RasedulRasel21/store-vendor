@@ -15,8 +15,11 @@ const COLUMNS = [
   "Bank",
   "Branch",
   "Routing or SWIFT",
-  "Amount",
-  "Currency",
+  "Amount owed",
+  "Owed in",
+  "Amount to send",
+  "Send in",
+  "Rate used",
   "Set aside on",
 ];
 
@@ -41,6 +44,10 @@ export const loader = async ({ request }) => {
       details.routingNumber,
       Number(payout.amount).toFixed(2),
       payout.currencyCode,
+      // Paid in the shop currency unless the vendor asked for another and there's a rate.
+      Number(payout.payoutAmount ?? payout.amount).toFixed(2),
+      payout.payoutCurrency ?? payout.currencyCode,
+      payout.fxRate ? Number(payout.fxRate) : "",
       payout.createdAt.toISOString().slice(0, 10),
     ]
       .map(csvCell)

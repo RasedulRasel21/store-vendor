@@ -171,6 +171,55 @@ export async function updateTaxReporting(shop, input) {
   return { saved: true };
 }
 
+// Stand-in rates so paying in other currencies can be tried before real ones are entered.
+// Clearly labelled in Settings, and only used once the merchant switches conversion on.
+const EXAMPLE_RATES = {
+  BDT: { USD: "0.0082", EUR: "0.0075", GBP: "0.0064", INR: "0.69", AED: "0.030" },
+  USD: { EUR: "0.92", GBP: "0.79", INR: "83.5", BDT: "122", CAD: "1.37" },
+};
+
+export function exampleRates(shopCurrency) {
+  return EXAMPLE_RATES[shopCurrency] ?? {};
+}
+
+export function ratesToText(rates) {
+  return Object.entries(rates ?? {})
+    .map(([code, rate]) => `${code} = ${rate}`)
+    .join("\n");
+}
+
+// One rate per line, like "USD = 0.0082": how much of that currency one unit of the shop
+// currency buys. Lines that can't be read are returned rather than skipped quietly.
+export function parseRates(text) {
+  const rates = {};
+  const problems = [];
+  for (const raw of String(text ?? "").split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const match = line.match(/^([A-Za-z]{3})\s*[=:]\s*([0-9]*\.?[0-9]+)$/);
+    if (!match || !(Number(match[2]) > 0)) {
+      problems.push(line);
+      continue;
+    }
+    rates[match[1].toUpperCase()] = String(Number(match[2]));
+  }
+  return { rates, problems };
+}
+
+export async function updatePayoutFx(shop, { enabled, ratesText }) {
+  const { rates, problems } = parseRates(ratesText);
+  if (problems.length) {
+    return { errors: { rates: `Couldn't read: ${problems.slice(0, 3).join(", ")}. Use one per line, like USD = 0.0082.` } };
+  }
+  if (enabled && !Object.keys(rates).length) {
+    return { errors: { rates: "Add at least one rate before switching this on" } };
+  }
+
+  const data = { payoutFxEnabled: Boolean(enabled), payoutFxRates: rates };
+  await db.shopSettings.upsert({ where: { shop }, update: data, create: { shop, ...data } });
+  return { saved: true };
+}
+
 export function dismissSetupGuide(shop) {
   const now = new Date();
   return db.shopSettings.upsert({

@@ -23,7 +23,10 @@ import {
   shopLocations,
   updateDefaultCommission,
   updateFulfillmentDays,
+  exampleRates,
+  ratesToText,
   updateInvoiceSettings,
+  updatePayoutFx,
   updatePayoutSettings,
   updateRestockLocation,
   updateTaxReporting,
@@ -71,6 +74,14 @@ export const loader = async ({ request }) => {
       requests: settings.payoutRequests,
       schedule: settings.payoutSchedule,
       refundKeepsCommission: settings.refundKeepsCommission,
+    },
+    payoutFx: {
+      enabled: settings.payoutFxEnabled,
+      // Nothing saved yet: offer the example rates, which the form labels as examples.
+      rates: settings.payoutFxRates
+        ? ratesToText(settings.payoutFxRates)
+        : ratesToText(exampleRates(settings.currencyCode ?? currencyCode)),
+      examples: !settings.payoutFxRates,
     },
     taxReporting: {
       us1099kAmount: String(settings.us1099kAmount),
@@ -145,6 +156,14 @@ export const action = async ({ request }) => {
       requests: formData.get("requests") === "on",
       schedule: String(formData.get("schedule") ?? ""),
       refundKeepsCommission: formData.get("refundKeepsCommission") === "on",
+    });
+    return { intent, errors: result.errors ?? null, saved: Boolean(result.saved) };
+  }
+
+  if (intent === "payoutFx") {
+    const result = await updatePayoutFx(session.shop, {
+      enabled: formData.get("enabled") === "on",
+      ratesText: formData.get("rates"),
     });
     return { intent, errors: result.errors ?? null, saved: Boolean(result.saved) };
   }
@@ -273,7 +292,9 @@ export default function Settings() {
     email,
     invoices,
     taxReporting,
+    payoutFx,
   } = useLoaderData();
+  const fxErrors = actionData?.intent === "payoutFx" ? (actionData.errors ?? {}) : {};
   const taxErrors = actionData?.intent === "taxReporting" ? (actionData.errors ?? {}) : {};
   const invoiceErrors = actionData?.intent === "invoices" ? (actionData.errors ?? {}) : {};
   const emailErrors = actionData?.intent === "connectEmail" ? (actionData.errors ?? {}) : {};
@@ -491,6 +512,42 @@ export default function Settings() {
             <s-stack direction="inline">
               <s-button type="submit" loading={submittingIntent === "syncCollections"}>
                 Sync now
+              </s-button>
+            </s-stack>
+          </s-stack>
+        </Form>
+      </s-section>
+
+      <s-section heading="Paying vendors in other currencies">
+        <Form method="post">
+          <input type="hidden" name="intent" value="payoutFx" />
+          <s-stack direction="block" gap="base">
+            <s-paragraph color="subdued">
+              {`Vendors can ask to be paid in their own currency. What they're owed stays in ${currencyCode}; each payout is converted at your rate when it's set aside, and the rate is kept on the payout. Your bank's rate on the day is what actually counts, so keep these close to it.`}
+            </s-paragraph>
+            {payoutFx.examples && (
+              <s-banner tone="warning">
+                These are example rates, not today&apos;s. Replace them before switching conversion on.
+              </s-banner>
+            )}
+            <s-text-area
+              label={`Rates for 1 ${currencyCode}`}
+              name="rates"
+              rows={5}
+              defaultValue={payoutFx.rates}
+              placeholder="USD = 0.0082"
+              details="One per line: a currency code, then how much of it one unit of your currency buys."
+              error={fxErrors.rates}
+            ></s-text-area>
+            <s-checkbox
+              label="Convert payouts for vendors who asked for another currency"
+              name="enabled"
+              defaultChecked={payoutFx.enabled}
+              details="Off: everyone is paid in your currency, whatever they asked for."
+            ></s-checkbox>
+            <s-stack direction="inline">
+              <s-button type="submit" loading={submittingIntent === "payoutFx"}>
+                Save
               </s-button>
             </s-stack>
           </s-stack>

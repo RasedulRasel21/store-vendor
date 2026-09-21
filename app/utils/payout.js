@@ -57,6 +57,7 @@ export function payoutRows(method, details) {
     );
     if (details.routingNumber) rows.push({ label: "Routing or SWIFT code", value: details.routingNumber });
   }
+  if (details.currency) rows.push({ label: "Wants paying in", value: details.currency });
 
   return rows;
 }
