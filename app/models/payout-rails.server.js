@@ -109,6 +109,15 @@ export async function sendPayout(shop, payoutId, actor) {
   const destination = payout.details?.accountNumber;
   if (!destination) return { error: "The payout has no account to send to" };
 
+  // A Stripe transfer only ever goes to the account the store's own platform created for
+  // this vendor, whatever the payout details say.
+  if (rail === "STRIPE") {
+    const vendor = await db.vendor.findUnique({ where: { id: payout.vendorId }, select: { stripeAccountId: true } });
+    if (!vendor?.stripeAccountId || vendor.stripeAccountId !== destination) {
+      return { error: "That Stripe account isn't the one this vendor set up with your platform. Ask them to reconnect Stripe." };
+    }
+  }
+
   // Converted payouts go out in the vendor's currency; everyone else in the shop's.
   const currency = payout.payoutCurrency ?? payout.currencyCode;
   const amount = Number(payout.payoutAmount ?? payout.amount).toFixed(2);
