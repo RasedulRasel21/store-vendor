@@ -176,6 +176,62 @@ export async function vendorBalances(shop, { vendorId, holdDays }, client = db) 
   return balances;
 }
 
+// A credit or debit by hand: a damaged-goods allowance, a fee, a correction. The reason
+// shows on the vendor's statement, so it's required.
+export async function adjustBalance(shop, vendorId, { direction, amount, reason, actor }) {
+  const value = round2(amount);
+  const note = String(reason ?? "").trim();
+  const errors = {};
+  if (!(value > 0)) errors.amount = "Enter an amount above zero";
+  if (!note) errors.reason = "Say why; the vendor sees this on their statement";
+  if (Object.keys(errors).length) return { errors };
+
+  const [vendor, settings] = await Promise.all([
+    db.vendor.findFirst({ where: { id: vendorId, shop }, select: { id: true } }),
+    db.shopSettings.findUnique({ where: { shop }, select: { currencyCode: true } }),
+  ]);
+  if (!vendor) return { error: "Vendor not found" };
+
+  const signed = direction === "debit" ? -value : value;
+  await db.$transaction([
+    db.ledgerEntry.create({
+      data: {
+        shop,
+        vendorId,
+        type: "ADJUSTMENT",
+        amount: signed.toFixed(2),
+        currencyCode: settings?.currencyCode ?? "USD",
+        description: note.slice(0, 300),
+        createdBy: actor,
+      },
+    }),
+    db.vendorActivity.create({
+      data: { vendorId, action: "ledger.adjusted", actor, details: { amount: signed, reason: note } },
+    }),
+  ]);
+
+  return { ok: true };
+}
+
+// Newest first, for statements on both sides.
+export function vendorLedger(shop, vendorId, { take = 50 } = {}) {
+  return db.ledgerEntry.findMany({
+    where: { shop, vendorId },
+    orderBy: { createdAt: "desc" },
+    take,
+    select: {
+      id: true,
+      type: true,
+      amount: true,
+      currencyCode: true,
+      description: true,
+      orderName: true,
+      vendorOrderId: true,
+      createdAt: true,
+    },
+  });
+}
+
 export async function vendorBalance(shop, vendorId, holdDays, client = db) {
   const balances = await vendorBalances(shop, { vendorId, holdDays }, client);
   return balances.get(vendorId) ?? { pending: 0, available: 0, inFlight: 0, paid: 0 };

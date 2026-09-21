@@ -16,6 +16,7 @@ import {
   shopLocations,
   updateDefaultCommission,
   updateFulfillmentDays,
+  updatePayoutSettings,
   updateRestockLocation,
 } from "../models/settings.server";
 import { formatDate } from "../utils/vendor-display";
@@ -54,6 +55,11 @@ export const loader = async ({ request }) => {
       fixed: String(settings.commissionFixed),
     },
     fulfillmentDays: settings.fulfillmentDays,
+    payouts: {
+      holdDays: String(settings.payoutHoldDays),
+      minimum: String(settings.payoutMinimum),
+      requests: settings.payoutRequests,
+    },
     // The key itself never leaves the server; only whether one is connected.
     labels: {
       provider: settings.labelProvider ?? "",
@@ -96,6 +102,15 @@ export const action = async ({ request }) => {
       trackingUrlTemplate: String(formData.get("trackingUrlTemplate") ?? ""),
     });
     return { intent, error: result.error ?? null };
+  }
+
+  if (intent === "payouts") {
+    const result = await updatePayoutSettings(session.shop, {
+      holdDays: formData.get("holdDays"),
+      minimum: formData.get("minimum"),
+      requests: formData.get("requests") === "on",
+    });
+    return { intent, errors: result.errors ?? null, saved: Boolean(result.saved) };
   }
 
   if (intent === "connectLabels") {
@@ -156,8 +171,17 @@ const CARRIER_STATUS = {
 };
 
 export default function Settings() {
-  const { commission, currencyCode, collections, carriers, fulfillmentDays, locations, restockLocationId, labels } =
-    useLoaderData();
+  const {
+    commission,
+    currencyCode,
+    collections,
+    carriers,
+    fulfillmentDays,
+    locations,
+    restockLocationId,
+    labels,
+    payouts,
+  } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const shopify = useAppBridge();
@@ -216,6 +240,55 @@ export default function Settings() {
                 variant="primary"
                 loading={submittingIntent === "commission"}
               >
+                Save
+              </s-button>
+            </s-stack>
+          </s-stack>
+        </Form>
+      </s-section>
+
+      <s-section heading="Vendor payouts">
+        <Form method="post">
+          <input type="hidden" name="intent" value="payouts" />
+          <s-stack direction="block" gap="base">
+            <s-paragraph color="subdued">
+              A vendor&apos;s share becomes available once the order is both paid and shipped, plus the
+              hold below. The hold covers your own payout from Shopify and the returns window, so you
+              never pay out money you haven&apos;t received or might have to refund.
+            </s-paragraph>
+            <s-grid gridTemplateColumns="minmax(0,1fr) minmax(0,1fr)" gap="base">
+              <s-number-field
+                label="Hold after shipping"
+                name="holdDays"
+                suffix="days"
+                inputMode="numeric"
+                step={1}
+                min={0}
+                max={90}
+                defaultValue={payouts.holdDays}
+                error={actionData?.intent === "payouts" ? actionData.errors?.holdDays : undefined}
+                required
+              ></s-number-field>
+              <s-number-field
+                label="Smallest payout"
+                name="minimum"
+                suffix={currencyCode}
+                inputMode="decimal"
+                step={0.01}
+                min={0}
+                defaultValue={payouts.minimum}
+                details="Balances below this wait until they're worth a transfer."
+                error={actionData?.intent === "payouts" ? actionData.errors?.minimum : undefined}
+              ></s-number-field>
+            </s-grid>
+            <s-checkbox
+              label="Vendors can ask for their available balance"
+              name="requests"
+              defaultChecked={payouts.requests}
+              details="You still accept or decline each request."
+            ></s-checkbox>
+            <s-stack direction="inline">
+              <s-button type="submit" loading={submittingIntent === "payouts"}>
                 Save
               </s-button>
             </s-stack>

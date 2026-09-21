@@ -99,6 +99,21 @@ export async function updateRestockLocation(shop, locationId, locations) {
   return { location };
 }
 
+// The hold, the minimum and whether vendors can ask. Bounded so a typo can't release
+// money the day it's taken, or hold it for a year.
+export async function updatePayoutSettings(shop, { holdDays, minimum, requests }) {
+  const days = Math.trunc(Number(holdDays));
+  const floor = Number(minimum);
+  const errors = {};
+  if (!Number.isFinite(days) || days < 0 || days > 90) errors.holdDays = "Choose between 0 and 90 days";
+  if (!Number.isFinite(floor) || floor < 0) errors.minimum = "Use zero or more";
+  if (Object.keys(errors).length) return { errors };
+
+  const data = { payoutHoldDays: days, payoutMinimum: floor.toFixed(2), payoutRequests: Boolean(requests) };
+  await db.shopSettings.upsert({ where: { shop }, update: data, create: { shop, ...data } });
+  return { saved: true };
+}
+
 export function dismissSetupGuide(shop) {
   const now = new Date();
   return db.shopSettings.upsert({

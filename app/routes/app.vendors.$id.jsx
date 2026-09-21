@@ -14,6 +14,9 @@ import {
 } from "../models/vendor.server";
 import { getShopCurrency, getShopSettings } from "../models/settings.server";
 import { syncCodRules } from "../models/cod-rules.server";
+import { adjustBalance, vendorBalance, vendorLedger } from "../models/ledger.server";
+import { createPayout } from "../models/payout.server";
+import { formatMoney } from "../utils/money";
 import { payoutRows } from "../utils/payout";
 import { effectiveCommission, formatCommission } from "../utils/commission";
 import {
@@ -42,6 +45,17 @@ const SUCCESS_MESSAGES = {
   "unlink-product": "Product unlinked",
   commission: "Commission saved",
   fulfillment: "Shipping and cash on delivery saved",
+  adjust: "Balance adjusted",
+  pay: "Set aside. Send it from Payouts, then mark it sent.",
+};
+
+const LEDGER_TYPE = {
+  SALE: "Sale",
+  REFUND: "Refund",
+  CANCELLATION: "Cancelled",
+  ADJUSTMENT: "Adjustment",
+  PAYOUT: "Payout",
+  PAYOUT_REVERSAL: "Payout returned",
 };
 
 const PRODUCT_STATUS_LABEL = {
@@ -64,10 +78,31 @@ export const loader = async ({ request, params }) => {
     getShopCurrency(admin),
   ]);
   const commission = effectiveCommission(vendor, settings);
+  const [balance, ledger] = await Promise.all([
+    vendorBalance(session.shop, vendor.id, settings.payoutHoldDays),
+    vendorLedger(session.shop, vendor.id, { take: 25 }),
+  ]);
 
   return {
     products,
     currencyCode,
+    earnings: {
+      pending: formatMoney(balance.pending, currencyCode),
+      available: formatMoney(balance.available, currencyCode),
+      inFlight: formatMoney(balance.inFlight, currencyCode),
+      paid: formatMoney(balance.paid, currencyCode),
+      canPay: Boolean(vendor.payoutMethod) && balance.available > 0,
+      owesUs: balance.available < 0,
+      entries: ledger.map((entry) => ({
+        id: entry.id,
+        type: entry.type,
+        description: entry.description,
+        amount: formatMoney(entry.amount, entry.currencyCode),
+        credit: Number(entry.amount) >= 0,
+        vendorOrderId: entry.vendorOrderId,
+        date: formatDate(entry.createdAt),
+      })),
+    },
     commission: {
       ...commission,
       label: formatCommission(commission, currencyCode),
@@ -223,6 +258,19 @@ export const action = async ({ request, params }) => {
       if (result.error) return { intent, error: result.error };
       return { intent, error: null, linked: result.linked, failed: result.failed };
     }
+    case "adjust": {
+      const result = await adjustBalance(session.shop, params.id, {
+        direction: String(formData.get("direction") ?? "credit"),
+        amount: formData.get("amount"),
+        reason: String(formData.get("reason") ?? ""),
+        actor: ACTOR,
+      });
+      return { intent, error: result.error ?? null, fieldErrors: result.errors ?? null };
+    }
+    case "pay": {
+      const result = await createPayout(session.shop, params.id, { actor: ACTOR });
+      return { intent, error: result.error ?? null };
+    }
     case "unlink-product": {
       const result = await unlinkProduct(
         admin,
@@ -239,7 +287,7 @@ export const action = async ({ request, params }) => {
 };
 
 export default function VendorDetail() {
-  const { vendor, products, commission, currencyCode, portalConfigured } =
+  const { vendor, products, commission, currencyCode, portalConfigured, earnings } =
     useLoaderData();
   const [useDefaultCommission, setUseDefaultCommission] = useState(
     !commission.custom,
@@ -424,6 +472,119 @@ export default function VendorDetail() {
           {vendor.payoutUpdatedAt && (
             <s-text color="subdued">{`Last approved ${vendor.payoutUpdatedAt}`}</s-text>
           )}
+        </s-stack>
+      </s-section>
+
+      <s-section heading="Earnings">
+        <s-stack direction="block" gap="base">
+          <s-grid gridTemplateColumns="repeat(4, minmax(0, 1fr))" gap="base">
+            <s-stack direction="block">
+              <s-text color="subdued">Not yet available</s-text>
+              <s-text type="strong">{earnings.pending}</s-text>
+            </s-stack>
+            <s-stack direction="block">
+              <s-text color="subdued">Available</s-text>
+              <s-text type="strong">{earnings.available}</s-text>
+            </s-stack>
+            <s-stack direction="block">
+              <s-text color="subdued">Waiting to be sent</s-text>
+              <s-text type="strong">{earnings.inFlight}</s-text>
+            </s-stack>
+            <s-stack direction="block">
+              <s-text color="subdued">Paid so far</s-text>
+              <s-text type="strong">{earnings.paid}</s-text>
+            </s-stack>
+          </s-grid>
+
+          {earnings.owesUs && (
+            <s-banner tone="warning">
+              A refund landed after this vendor was paid, so they owe it back. It comes off their next
+              payout.
+            </s-banner>
+          )}
+
+          {earnings.canPay && (
+            <s-stack direction="inline" gap="small">
+              <s-button onClick={() => submit("pay")} loading={busyIntent === "pay"}>
+                {`Pay ${earnings.available}`}
+              </s-button>
+              <s-button variant="tertiary" href="/app/payouts">
+                All payouts
+              </s-button>
+            </s-stack>
+          )}
+
+          {earnings.entries.length > 0 && (
+            <s-table>
+              <s-table-header-row>
+                <s-table-header listSlot="primary">What</s-table-header>
+                <s-table-header listSlot="labeled">Type</s-table-header>
+                <s-table-header listSlot="labeled">Date</s-table-header>
+                <s-table-header listSlot="labeled" format="currency">
+                  Amount
+                </s-table-header>
+              </s-table-header-row>
+              <s-table-body>
+                {earnings.entries.map((entry) => (
+                  <s-table-row key={entry.id}>
+                    <s-table-cell>
+                      {entry.vendorOrderId ? (
+                        <s-link href={`/app/orders/${entry.vendorOrderId}`}>{entry.description}</s-link>
+                      ) : (
+                        entry.description
+                      )}
+                    </s-table-cell>
+                    <s-table-cell>{LEDGER_TYPE[entry.type] ?? entry.type}</s-table-cell>
+                    <s-table-cell>{entry.date}</s-table-cell>
+                    <s-table-cell>
+                      <s-text tone={entry.credit ? "success" : "critical"}>{entry.amount}</s-text>
+                    </s-table-cell>
+                  </s-table-row>
+                ))}
+              </s-table-body>
+            </s-table>
+          )}
+
+          <s-divider></s-divider>
+
+          <fetcher.Form method="post">
+            <input type="hidden" name="intent" value="adjust" />
+            <s-stack direction="block" gap="base">
+              <s-text type="strong">Adjust by hand</s-text>
+              <s-paragraph color="subdued">
+                For anything an order doesn&apos;t cover: a damage allowance, a fee, a correction. It counts
+                straight away, and the vendor sees the reason on their statement.
+              </s-paragraph>
+              <s-grid gridTemplateColumns="minmax(0,10rem) minmax(0,12rem) minmax(0,1fr)" gap="base">
+                <s-select label="Type" name="direction" value="credit">
+                  <s-option value="credit">Credit the vendor</s-option>
+                  <s-option value="debit">Charge the vendor</s-option>
+                </s-select>
+                <s-number-field
+                  label="Amount"
+                  name="amount"
+                  suffix={currencyCode}
+                  inputMode="decimal"
+                  step={0.01}
+                  min={0}
+                  error={result?.intent === "adjust" ? result.fieldErrors?.amount : undefined}
+                  required
+                ></s-number-field>
+                <s-text-field
+                  label="Reason"
+                  name="reason"
+                  placeholder="Damaged in the store's warehouse"
+                  error={result?.intent === "adjust" ? result.fieldErrors?.reason : undefined}
+                  required
+                ></s-text-field>
+              </s-grid>
+              <s-stack direction="inline">
+                <s-button type="submit" loading={busyIntent === "adjust"}>
+                  Adjust balance
+                </s-button>
+              </s-stack>
+            </s-stack>
+          </fetcher.Form>
         </s-stack>
       </s-section>
 
