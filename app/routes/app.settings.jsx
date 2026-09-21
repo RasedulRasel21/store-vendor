@@ -11,6 +11,13 @@ import {
   LABEL_PROVIDERS,
 } from "../models/label-account.server";
 import {
+  connectEmail,
+  disconnectEmail,
+  EMAIL_PROVIDERS,
+  PLACEHOLDER_FROM,
+  sendEmail,
+} from "../models/email.server";
+import {
   getShopCurrency,
   getShopSettings,
   shopLocations,
@@ -61,6 +68,12 @@ export const loader = async ({ request }) => {
       requests: settings.payoutRequests,
       schedule: settings.payoutSchedule,
       refundKeepsCommission: settings.refundKeepsCommission,
+    },
+    // As with carrier keys, only whether email is connected leaves the server.
+    email: {
+      provider: settings.emailProvider ? EMAIL_PROVIDERS[settings.emailProvider]?.label : null,
+      from: settings.emailFrom || PLACEHOLDER_FROM,
+      providers: Object.entries(EMAIL_PROVIDERS).map(([value, provider]) => ({ value, label: provider.label })),
     },
     // The key itself never leaves the server; only whether one is connected.
     labels: {
@@ -115,6 +128,36 @@ export const action = async ({ request }) => {
       refundKeepsCommission: formData.get("refundKeepsCommission") === "on",
     });
     return { intent, errors: result.errors ?? null, saved: Boolean(result.saved) };
+  }
+
+  if (intent === "connectEmail") {
+    const result = await connectEmail(session.shop, {
+      provider: String(formData.get("provider") ?? ""),
+      apiKey: String(formData.get("apiKey") ?? ""),
+      from: String(formData.get("from") ?? ""),
+      replyTo: String(formData.get("replyTo") ?? ""),
+    });
+    return { intent, error: result.error ?? null, errors: result.errors ?? null, saved: Boolean(result.ok) };
+  }
+
+  if (intent === "disconnectEmail") {
+    await disconnectEmail(session.shop);
+    return { intent, error: null, saved: true };
+  }
+
+  if (intent === "testEmail") {
+    const to = String(formData.get("to") ?? "").trim();
+    const result = await sendEmail(session.shop, {
+      to,
+      subject: "A test from StoreVendor",
+      text: "This is a test message from StoreVendor.\n\nIf you can read it, vendor emails will reach people the same way.",
+      template: "test",
+    });
+    return {
+      intent,
+      error: result.error ?? (result.skipped === "No valid address" ? "Enter an email address to send it to" : null),
+      tested: result.sent ? "Sent. Check the inbox." : result.skipped ? "No provider yet, so it's only in the email log." : null,
+    };
   }
 
   if (intent === "connectLabels") {
@@ -185,7 +228,9 @@ export default function Settings() {
     restockLocationId,
     labels,
     payouts,
+    email,
   } = useLoaderData();
+  const emailErrors = actionData?.intent === "connectEmail" ? (actionData.errors ?? {}) : {};
   const actionData = useActionData();
   const navigation = useNavigation();
   const shopify = useAppBridge();
@@ -404,6 +449,90 @@ export default function Settings() {
             </s-stack>
           </s-stack>
         </Form>
+      </s-section>
+
+      <s-section heading="Email">
+        <s-stack direction="block" gap="base">
+          <s-paragraph color="subdued">
+            Vendors are emailed when their money moves. Connect Resend or Postmark to send from your
+            own domain. Until then every message is kept in the email log, so nothing is lost.
+          </s-paragraph>
+          {["connectEmail", "testEmail"].includes(actionData?.intent) && actionData.error && (
+            <s-banner tone="critical">{actionData.error}</s-banner>
+          )}
+          {actionData?.intent === "testEmail" && actionData.tested && (
+            <s-banner tone="info">{actionData.tested}</s-banner>
+          )}
+
+          {email.provider ? (
+            <s-stack direction="inline" gap="small" alignItems="center">
+              <s-badge tone="success">{`Sending with ${email.provider}`}</s-badge>
+              <s-text color="subdued">{email.from}</s-text>
+              <Form method="post">
+                <input type="hidden" name="intent" value="disconnectEmail" />
+                <s-button type="submit" variant="tertiary" tone="critical">
+                  Disconnect
+                </s-button>
+              </Form>
+            </s-stack>
+          ) : (
+            <Form method="post">
+              <input type="hidden" name="intent" value="connectEmail" />
+              <s-stack direction="block" gap="base">
+                <s-grid gridTemplateColumns="minmax(0,12rem) minmax(0,1fr)" gap="base">
+                  <s-select label="Provider" name="provider" value="RESEND">
+                    {email.providers.map((provider) => (
+                      <s-option key={provider.value} value={provider.value}>
+                        {provider.label}
+                      </s-option>
+                    ))}
+                  </s-select>
+                  <s-password-field
+                    label="API key or server token"
+                    name="apiKey"
+                    autocomplete="off"
+                    error={emailErrors.apiKey}
+                    required
+                  ></s-password-field>
+                </s-grid>
+                <s-grid gridTemplateColumns="minmax(0,1fr) minmax(0,1fr)" gap="base">
+                  <s-text-field
+                    label="Send from"
+                    name="from"
+                    placeholder="Your Store <payouts@yourstore.com>"
+                    details="On a domain you've verified with the provider."
+                    error={emailErrors.from}
+                    required
+                  ></s-text-field>
+                  <s-email-field
+                    label="Replies go to (optional)"
+                    name="replyTo"
+                    placeholder="support@yourstore.com"
+                    error={emailErrors.replyTo}
+                  ></s-email-field>
+                </s-grid>
+                <s-stack direction="inline">
+                  <s-button type="submit" loading={submittingIntent === "connectEmail"}>
+                    Connect
+                  </s-button>
+                </s-stack>
+              </s-stack>
+            </Form>
+          )}
+
+          <Form method="post">
+            <input type="hidden" name="intent" value="testEmail" />
+            <s-grid gridTemplateColumns="minmax(0,1fr) auto auto" gap="base" alignItems="end">
+              <s-email-field label="Send a test to" name="to" placeholder="you@yourstore.com"></s-email-field>
+              <s-button type="submit" loading={submittingIntent === "testEmail"}>
+                Send test
+              </s-button>
+              <s-button variant="tertiary" href="/app/emails">
+                Email log
+              </s-button>
+            </s-grid>
+          </Form>
+        </s-stack>
       </s-section>
 
       <s-section heading="Shipping labels">

@@ -46,6 +46,7 @@
       "routes/app.vendors.new": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/app.orders.$id": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/app.settings": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/app.emails": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/app._index": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0"
     },
     "routes": {
@@ -391,6 +392,15 @@
           "runtime": "nodejs"
         }
       },
+      "routes/app.emails": {
+        "id": "routes/app.emails",
+        "parentId": "routes/app",
+        "file": "app/routes/app.emails.jsx",
+        "path": "emails",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
       "routes/app._index": {
         "id": "routes/app._index",
         "parentId": "routes/app",
@@ -648,6 +658,12 @@
         "file": "routes/app.settings.jsx",
         "path": "settings"
       },
+      "routes/app.emails": {
+        "id": "routes/app.emails",
+        "parentId": "routes/app",
+        "file": "routes/app.emails.jsx",
+        "path": "emails"
+      },
       "routes/app._index": {
         "id": "routes/app._index",
         "parentId": "routes/app",
@@ -859,6 +875,11 @@
                 "id": "routes/app.settings",
                 "file": "routes/app.settings.jsx",
                 "path": "settings"
+              },
+              {
+                "id": "routes/app.emails",
+                "file": "routes/app.emails.jsx",
+                "path": "emails"
               },
               {
                 "id": "routes/app._index",

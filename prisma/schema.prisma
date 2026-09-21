@@ -71,6 +71,12 @@ model ShopSettings {
   // Off: a refund hands back the store's commission on the refunded items too. On: the
   // store keeps its commission and the vendor carries the whole refund.
   refundKeepsCommission Boolean @default(false)
+  // Email: RESEND or POSTMARK, with the key encrypted. With none set, messages are still
+  // written to the email log, so nothing is lost and they can be read there.
+  emailProvider String?
+  emailApiKey   String?
+  emailFrom     String?
+  emailReplyTo  String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 }
@@ -409,6 +415,38 @@ enum PayoutStatus {
   FAILED
   // Called off before it went, or a request turned down.
   CANCELLED
+}
+
+// Every email the app sends or would send. Written before the provider is called, so a
+// message that fails, or has no provider to go through, is still on record.
+model EmailMessage {
+  id       String      @id @default(cuid())
+  shop     String
+  to       String
+  subject  String
+  text     String
+  html     String?
+  // What kind of message, like "payout.paid", for filtering the log.
+  template String
+  status   EmailStatus @default(QUEUED)
+  error    String?
+  // The provider's id for the message, to look it up on their side.
+  providerId String?
+  // What it's about, so the log can link back to it.
+  relatedType String?
+  relatedId   String?
+  createdAt   DateTime  @default(now())
+  sentAt      DateTime?
+
+  @@index([shop, createdAt])
+}
+
+enum EmailStatus {
+  QUEUED
+  SENT
+  FAILED
+  // No provider set up, so it was only logged.
+  SKIPPED
 }
 
 // One row per webhook Shopify delivers. Shopify retries on any slow or failed response, so

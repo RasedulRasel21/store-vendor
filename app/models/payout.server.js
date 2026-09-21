@@ -1,6 +1,13 @@
 import db from "../db.server";
 import { round2 } from "../utils/money";
 import { vendorBalance, vendorBalances } from "./ledger.server";
+import {
+  notifyPayoutBounced,
+  notifyPayoutCalledOff,
+  notifyPayoutRequestAccepted,
+  notifyPayoutRequestDeclined,
+  notifyPayoutSent,
+} from "./notifications.server";
 import { getShopSettings } from "./settings.server";
 
 // The app records payouts; it never moves money. The merchant sends it from their own
@@ -116,7 +123,14 @@ async function findPayout(tx, shop, payoutId) {
 }
 
 // The merchant sent the money and has the bank's reference for it.
-export async function markPayoutPaid(shop, payoutId, { reference, actor }) {
+export async function markPayoutPaid(shop, payoutId, options) {
+  const result = await recordPaid(shop, payoutId, options);
+  // After the commit, so the vendor is never told about something that was rolled back.
+  if (result.payout) await notifyPayoutSent(shop, result.payout.id);
+  return result;
+}
+
+function recordPaid(shop, payoutId, { reference, actor }) {
   return db.$transaction(async (tx) => {
     const payout = await findPayout(tx, shop, payoutId);
     if (!payout) return { error: "Payout not found" };
@@ -163,33 +177,47 @@ async function giveBack(shop, payoutId, { toStatus, allowedFrom, note, actor, ac
       });
     }
     await logPayoutActivity(tx, payout.vendorId, action, actor, { amount: Number(payout.amount), note });
-    return { payout: updated };
+    return { payout: updated, previousStatus: payout.status };
   }, TRANSACTION);
 }
 
-export function cancelPayout(shop, payoutId, { note, actor }) {
-  return giveBack(shop, payoutId, {
+export async function cancelPayout(shop, payoutId, { note, actor }) {
+  const result = await giveBack(shop, payoutId, {
     toStatus: "CANCELLED",
     allowedFrom: ACTIVE,
     note,
     actor,
     action: "payout.cancelled",
   });
+  // A request turned down and a payout called off read differently to the vendor.
+  if (result.payout) {
+    if (result.previousStatus === "REQUESTED") await notifyPayoutRequestDeclined(shop, result.payout.id);
+    else await notifyPayoutCalledOff(shop, result.payout.id);
+  }
+  return result;
 }
 
-export function failPayout(shop, payoutId, { note, actor }) {
-  return giveBack(shop, payoutId, {
+export async function failPayout(shop, payoutId, { note, actor }) {
+  const result = await giveBack(shop, payoutId, {
     toStatus: "FAILED",
     allowedFrom: ["PAID"],
     note,
     actor,
     action: "payout.failed",
   });
+  if (result.payout) await notifyPayoutBounced(shop, result.payout.id);
+  return result;
 }
 
 // A vendor's request becomes a real payout. The balance may have moved since they asked,
 // so it's re-checked and never pays more than is available now.
 export async function acceptPayoutRequest(shop, payoutId, actor) {
+  const result = await acceptRequest(shop, payoutId, actor);
+  if (result.payout) await notifyPayoutRequestAccepted(shop, result.payout.id);
+  return result;
+}
+
+function acceptRequest(shop, payoutId, actor) {
   return db.$transaction(async (tx) => {
     const payout = await findPayout(tx, shop, payoutId);
     if (!payout) return { error: "Request not found" };
