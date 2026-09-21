@@ -32,6 +32,8 @@
       "routes/app.vendors.$id_.edit": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/app.approvals._index": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/app.changes._index": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/app.payouts.export": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/app.payouts._index": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/app.vendors.import": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/app.vendors._index": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/app.approvals.$id": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
@@ -253,6 +255,25 @@
         "parentId": "routes/app",
         "file": "app/routes/app.changes._index.jsx",
         "path": "changes",
+        "index": true,
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/app.payouts.export": {
+        "id": "routes/app.payouts.export",
+        "parentId": "routes/app",
+        "file": "app/routes/app.payouts.export.jsx",
+        "path": "payouts/export",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/app.payouts._index": {
+        "id": "routes/app.payouts._index",
+        "parentId": "routes/app",
+        "file": "app/routes/app.payouts._index.jsx",
+        "path": "payouts",
         "index": true,
         "config": {
           "runtime": "nodejs"
@@ -520,6 +541,19 @@
         "path": "changes",
         "index": true
       },
+      "routes/app.payouts.export": {
+        "id": "routes/app.payouts.export",
+        "parentId": "routes/app",
+        "file": "routes/app.payouts.export.jsx",
+        "path": "payouts/export"
+      },
+      "routes/app.payouts._index": {
+        "id": "routes/app.payouts._index",
+        "parentId": "routes/app",
+        "file": "routes/app.payouts._index.jsx",
+        "path": "payouts",
+        "index": true
+      },
       "routes/app.vendors.import": {
         "id": "routes/app.vendors.import",
         "parentId": "routes/app",
@@ -719,6 +753,17 @@
                 "id": "routes/app.changes._index",
                 "file": "routes/app.changes._index.jsx",
                 "path": "changes",
+                "index": true
+              },
+              {
+                "id": "routes/app.payouts.export",
+                "file": "routes/app.payouts.export.jsx",
+                "path": "payouts/export"
+              },
+              {
+                "id": "routes/app.payouts._index",
+                "file": "routes/app.payouts._index.jsx",
+                "path": "payouts",
                 "index": true
               },
               {

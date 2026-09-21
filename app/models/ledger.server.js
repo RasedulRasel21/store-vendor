@@ -118,13 +118,15 @@ export function releasesAt(vendorOrder, holdDays) {
 //               Can go below zero when a refund lands after the money was paid out.
 //   inFlight  - payouts set aside but not yet marked sent (already taken off available)
 //   paid      - payouts actually sent, over all time
-export async function vendorBalances(shop, { vendorId, holdDays }) {
+// Takes an optional transaction client, so a caller holding a lock reads through the same
+// connection instead of asking the pool for a second one.
+export async function vendorBalances(shop, { vendorId, holdDays }, client = db) {
   const now = Date.now();
   const where = { shop, ...(vendorId ? { vendorId } : {}) };
 
   const [grouped, payouts] = await Promise.all([
-    db.ledgerEntry.groupBy({ by: ["vendorId", "vendorOrderId"], where, _sum: { amount: true } }),
-    db.payout.groupBy({
+    client.ledgerEntry.groupBy({ by: ["vendorId", "vendorOrderId"], where, _sum: { amount: true } }),
+    client.payout.groupBy({
       by: ["vendorId", "status"],
       where: { ...where, status: { in: ["PENDING", "PAID"] } },
       _sum: { amount: true },
@@ -133,7 +135,7 @@ export async function vendorBalances(shop, { vendorId, holdDays }) {
 
   const orderIds = grouped.map((row) => row.vendorOrderId).filter(Boolean);
   const orders = orderIds.length
-    ? await db.vendorOrder.findMany({
+    ? await client.vendorOrder.findMany({
         where: { id: { in: orderIds } },
         select: { id: true, paidAt: true, fulfilledAt: true },
       })
@@ -174,7 +176,7 @@ export async function vendorBalances(shop, { vendorId, holdDays }) {
   return balances;
 }
 
-export async function vendorBalance(shop, vendorId, holdDays) {
-  const balances = await vendorBalances(shop, { vendorId, holdDays });
+export async function vendorBalance(shop, vendorId, holdDays, client = db) {
+  const balances = await vendorBalances(shop, { vendorId, holdDays }, client);
   return balances.get(vendorId) ?? { pending: 0, available: 0, inFlight: 0, paid: 0 };
 }
