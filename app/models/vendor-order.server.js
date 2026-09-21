@@ -1,6 +1,7 @@
 import db from "../db.server";
 import { unauthenticated } from "../shopify.server";
 import { allowedCarrierNames } from "./carrier.server";
+import { syncOrderLedger } from "./ledger.server";
 import { reasonLabel } from "./order-issue.server";
 import { returnLabel } from "./vendor-return.server";
 import { getShopSettings } from "./settings.server";
@@ -343,6 +344,7 @@ export async function splitOrder(admin, shop, orderGid) {
     order.fulfillmentOrders?.nodes?.find((node) => node.deliveryMethod?.methodType)?.deliveryMethod
       ?.methodType ?? null;
 
+  const touched = [];
   for (const { vendor, lines } of groups.values()) {
     const subtotal = round2(lines.reduce((sum, line) => sum + Number(line.subtotal), 0));
     const commission = round2(lines.reduce((sum, line) => sum + Number(line.commission), 0));
@@ -413,7 +415,7 @@ export async function splitOrder(admin, shop, orderGid) {
       refundedAt: refunded > 0 ? new Date() : null,
     };
 
-    await db.$transaction(async (tx) => {
+    const vendorOrderId = await db.$transaction(async (tx) => {
       const existing = await tx.vendorOrder.findUnique({
         where: { shop_orderId_vendorId: { shop, orderId: order.id, vendorId: vendor.id } },
         select: {
@@ -477,10 +479,10 @@ export async function splitOrder(admin, shop, orderGid) {
             },
           });
         }
-        return;
+        return existing.id;
       }
 
-      await tx.vendorOrder.create({
+      const created = await tx.vendorOrder.create({
         data: { shop, vendorId: vendor.id, orderId: order.id, ...record, lines: { create: lines } },
       });
       await tx.vendorActivity.create({
@@ -491,10 +493,15 @@ export async function splitOrder(admin, shop, orderGid) {
           details: { orderName: order.name, earnings: record.earnings },
         },
       });
+      return created.id;
     });
+
+    // Outside the order's transaction: the ledger takes its own lock per vendor order.
+    touched.push(vendorOrderId);
   }
 
   await refreshShipmentTracking(order);
+  for (const vendorOrderId of touched) await syncOrderLedger(vendorOrderId);
 
   return { vendorOrders: groups.size };
 }
@@ -594,6 +601,10 @@ export async function cancelVendorOrders(shop, orderGid) {
     where: { shop, orderId: orderGid, status: { not: "CANCELLED" } },
     data: { status: "CANCELLED", cancelledAt: new Date() },
   });
+
+  // Whatever the vendor was owed on it comes back off.
+  const cancelled = await db.vendorOrder.findMany({ where: { shop, orderId: orderGid }, select: { id: true } });
+  for (const { id } of cancelled) await syncOrderLedger(id);
 }
 
 // Where a vendor order stands: everything refunded, fully shipped, partly shipped, or
@@ -1078,6 +1089,9 @@ async function dropEmptyVendorOrders(shop, orderId) {
     where: { shop, orderId, lines: { none: {} }, shipments: { none: {} } },
     select: { id: true },
   });
+  // Take back what the ledger credited on them first, while the entries can still name
+  // the order they came from.
+  for (const { id } of empty) await syncOrderLedger(id);
   if (empty.length) {
     await db.vendorOrder.deleteMany({ where: { id: { in: empty.map((order) => order.id) } } });
   }

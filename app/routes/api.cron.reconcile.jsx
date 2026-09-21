@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import db from "../db.server";
 import { unauthenticated } from "../shopify.server";
+import { syncShopLedger } from "../models/ledger.server";
 import { syncRecentOrders } from "../models/vendor-order.server";
 import { pruneWebhookEvents } from "../models/webhook-event.server";
 
@@ -40,7 +41,11 @@ export const loader = async ({ request }) => {
     try {
       const { admin } = await unauthenticated.admin(shop);
       const synced = await syncRecentOrders(admin, shop, { days: DAYS, batchSize: ORDERS_PER_SHOP });
-      results.push({ shop, ...synced });
+      // Any vendor order that changed without its ledger catching up gets caught up here.
+      const ledger = await syncShopLedger(shop, {
+        since: new Date(Date.now() - DAYS * 24 * 60 * 60 * 1000),
+      });
+      results.push({ shop, ...synced, ledgerEntries: ledger.entries });
     } catch (error) {
       // One shop with an expired token shouldn't stop the others.
       console.error(`Nightly reconcile failed for ${shop}`, error);

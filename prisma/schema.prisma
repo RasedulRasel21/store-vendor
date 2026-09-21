@@ -59,6 +59,13 @@ model ShopSettings {
   labelProvider  String?
   labelApiKey    String?
   labelAccount   String?
+  // Days after an order is both paid and shipped before the vendor's share can be paid
+  // out. Covers the store's own payout delay and the returns window.
+  payoutHoldDays Int     @default(7)
+  // Balances below this aren't worth a bank transfer.
+  payoutMinimum  Decimal @default(0) @db.Decimal(12, 2)
+  // Whether vendors can ask for their available balance instead of waiting.
+  payoutRequests Boolean @default(true)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 }
@@ -214,6 +221,7 @@ model VendorOrder {
   shipments VendorShipment[]
   returns   VendorReturn[]
   issues    VendorOrderIssue[]
+  ledgerEntries LedgerEntry[]
 
   @@unique([shop, orderId, vendorId])
   @@index([shop, status])
@@ -305,6 +313,95 @@ model VendorShipment {
   @@index([fulfillmentId])
 }
 
+// What the store owes each vendor, one row per movement and never edited. Balances are
+// sums of rows, so every figure a vendor sees can be traced back to what caused it.
+model LedgerEntry {
+  id       String          @id @default(cuid())
+  shop     String
+  vendorId String
+  vendor   Vendor          @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  type     LedgerEntryType
+  // Signed, in the shop currency: positive is owed to the vendor, negative takes it back.
+  amount       Decimal @db.Decimal(12, 2)
+  currencyCode String
+
+  vendorOrderId String?
+  vendorOrder   VendorOrder? @relation(fields: [vendorOrderId], references: [id], onDelete: SetNull)
+  // Kept on the row so a statement still reads properly if the vendor order goes.
+  orderName     String?
+  payoutId      String?
+  payout        Payout?      @relation(fields: [payoutId], references: [id], onDelete: SetNull)
+
+  description String
+  // "system", "merchant" or "vendor_user:<id>".
+  createdBy   String
+  createdAt   DateTime @default(now())
+
+  @@index([shop, vendorId, createdAt])
+  @@index([vendorOrderId])
+  @@index([payoutId])
+}
+
+enum LedgerEntryType {
+  // The vendor's share of an order.
+  SALE
+  // A refund took some of it back.
+  REFUND
+  // The order was cancelled, so none of it is owed.
+  CANCELLATION
+  // The order was edited, an item moved vendor, or the merchant credited or debited by hand.
+  ADJUSTMENT
+  // Money sent to the vendor.
+  PAYOUT
+  // A payout was cancelled or failed, so the money is owed again.
+  PAYOUT_REVERSAL
+}
+
+// Money sent, or about to be sent, to one vendor. The app never moves it: the merchant
+// pays from their own account and this records that they did.
+model Payout {
+  id           String       @id @default(cuid())
+  shop         String
+  vendorId     String
+  vendor       Vendor       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  amount       Decimal      @db.Decimal(12, 2)
+  currencyCode String
+  status       PayoutStatus @default(PENDING)
+
+  // How it goes, copied from the vendor when the payout is made so a later change to
+  // their details can't rewrite where past money went.
+  method  PayoutMethod?
+  details Json?
+  // The bank or wallet transaction reference, entered once the money is sent.
+  reference String?
+  note      String?
+
+  // Set when the vendor asked for it rather than the merchant starting it.
+  requestedAt DateTime?
+  createdBy   String
+  createdAt   DateTime  @default(now())
+  paidAt      DateTime?
+  cancelledAt DateTime?
+  updatedAt   DateTime  @updatedAt
+
+  entries LedgerEntry[]
+
+  @@index([shop, status])
+  @@index([vendorId, createdAt])
+}
+
+enum PayoutStatus {
+  // A vendor asked; nothing is set aside until the merchant accepts.
+  REQUESTED
+  // Set aside from the balance, waiting for the merchant to send it.
+  PENDING
+  PAID
+  // The transfer bounced; the money is owed again.
+  FAILED
+  // Called off before it went, or a request turned down.
+  CANCELLED
+}
+
 // One row per webhook Shopify delivers. Shopify retries on any slow or failed response, so
 // the id is claimed before the work starts and released if the work throws.
 model WebhookEvent {
@@ -388,11 +485,20 @@ model VendorReturn {
   @@index([vendorOrderId])
 }
 
+// Where a vendor wants their money. Bank works everywhere; the wallets are local rails
+// (bKash, Nagad and Rocket in Bangladesh, UPI in India, M-Pesa in East Africa); PayPal,
+// Payoneer and Wise reach vendors abroad. OTHER covers anything else the merchant agrees to.
 enum PayoutMethod {
   BANK
   BKASH
   NAGAD
   ROCKET
+  UPI
+  MPESA
+  PAYPAL
+  PAYONEER
+  WISE
+  OTHER
 }
 
 enum ChangeRequestType {
@@ -464,6 +570,8 @@ model Vendor {
   changeRequests     VendorChangeRequest[]
   orders             VendorOrder[]
   movedOrderLines    OrderLineVendor[]     @relation("MovedToVendor")
+  ledgerEntries      LedgerEntry[]
+  payouts            Payout[]
 
   @@unique([shop, handle])
   @@unique([shop, email])
