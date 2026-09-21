@@ -14,6 +14,13 @@ import {
   payoutOverview,
 } from "../models/payout.server";
 import { issueMonthForEveryone, previousMonth } from "../models/invoice.server";
+import {
+  autoSend,
+  connectedRails,
+  railFor,
+  refreshPayout,
+  sendPayout,
+} from "../models/payout-rails.server";
 import { formatMoney } from "../utils/money";
 import { accountLabel, maskAccount, PAYOUT_METHOD } from "../utils/payout";
 import { formatDate } from "../utils/vendor-display";
@@ -39,7 +46,10 @@ export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
   const params = new URL(request.url).searchParams;
 
-  const { settings, rows, counts } = await payoutOverview(session.shop);
+  const [{ settings, rows, counts }, connected] = await Promise.all([
+    payoutOverview(session.shop),
+    connectedRails(session.shop),
+  ]);
   const requested = params.get("tab");
   // Requests are waiting on the merchant, so they're what opens first when there are any.
   const tab = TABS[requested] ? requested : counts.REQUESTED?.count ? "requested" : "to-send";
@@ -84,6 +94,13 @@ export const loader = async ({ request }) => {
         : null,
       reference: payout.reference,
       note: payout.note,
+      // A rail that can send it, and whether it's already out there waiting on the rail.
+      rail: payout.status === "PENDING" && !payout.providerRef ? railFor(payout, connected) : null,
+      inFlight:
+        payout.status === "PENDING" && payout.providerRef
+          ? `Sent through ${payout.provider === "PAYPAL" ? "PayPal" : "Stripe"} · ${payout.providerStatus ?? "waiting"}`
+          : null,
+      checkable: payout.status === "PENDING" && payout.provider === "PAYPAL" && Boolean(payout.providerRef),
       // What actually goes out when the vendor is paid in another currency.
       converted: payout.payoutCurrency
         ? `Send ${formatMoney(payout.payoutAmount, payout.payoutCurrency)} (at ${Number(payout.fxRate)})`
@@ -105,9 +122,23 @@ export const action = async ({ request }) => {
   let result;
   if (intent === "pay") {
     result = await createPayout(session.shop, String(formData.get("vendorId") ?? ""), { actor: ACTOR });
+    if (result.payout) await autoSend(session.shop, [result.payout.id]);
   } else if (intent === "payAll") {
     const outcome = await payEveryoneDue(session.shop, ACTOR);
-    return { intent, created: outcome.created.length, skipped: outcome.skipped, missingDetails: outcome.missingDetails };
+    const auto = await autoSend(session.shop, outcome.created.map((payout) => payout.id));
+    return {
+      intent,
+      created: outcome.created.length,
+      autoSent: auto.sent,
+      skipped: outcome.skipped,
+      missingDetails: outcome.missingDetails,
+    };
+  } else if (intent === "send") {
+    const sent = await sendPayout(session.shop, payoutId, ACTOR);
+    return { intent, error: sent.error ?? null, ok: Boolean(sent.ok), settled: sent.settled ?? false };
+  } else if (intent === "check") {
+    const checked = await refreshPayout(session.shop, payoutId);
+    return { intent, error: checked.error ?? null, ok: !checked.error, outcome: checked.outcome ?? null };
   } else if (intent === "invoiceAll") {
     const outcome = await issueMonthForEveryone(session.shop, previousMonth());
     return { intent, issued: outcome.issued.length, error: outcome.failed.join(" ") || null };
@@ -122,6 +153,7 @@ export const action = async ({ request }) => {
     result = await failPayout(session.shop, payoutId, { note, actor: ACTOR });
   } else if (intent === "accept") {
     result = await acceptPayoutRequest(session.shop, payoutId, ACTOR);
+    if (result.payout) await autoSend(session.shop, [result.payout.id]);
   } else if (intent === "decline") {
     result = await cancelPayout(session.shop, payoutId, { note: note || "Not paid out this time", actor: ACTOR });
   } else {
@@ -154,7 +186,17 @@ export default function Payouts() {
 
   useEffect(() => {
     if (!actionData || actionData.error) return;
-    if (actionData.intent === "invoiceAll") {
+    if (actionData.intent === "send") {
+      shopify.toast.show(actionData.settled ? "Sent and settled" : "Sent. It shows as sent once PayPal confirms.");
+    } else if (actionData.intent === "check") {
+      shopify.toast.show(
+        actionData.outcome === "PAID"
+          ? "PayPal has paid it"
+          : actionData.outcome === "FAILED"
+            ? "PayPal couldn't pay it; the money is owed again"
+            : "Still waiting on PayPal",
+      );
+    } else if (actionData.intent === "invoiceAll") {
       shopify.toast.show(
         actionData.issued
           ? `${actionData.issued} ${actionData.issued === 1 ? "invoice" : "invoices"} issued and sent`
@@ -163,7 +205,9 @@ export default function Payouts() {
     } else if (actionData.intent === "payAll") {
       shopify.toast.show(
         actionData.created
-          ? `${actionData.created} ${actionData.created === 1 ? "payout" : "payouts"} ready to send`
+          ? `${actionData.created} ${actionData.created === 1 ? "payout" : "payouts"} set aside${
+              actionData.autoSent ? `, ${actionData.autoSent} sent automatically` : ""
+            }`
           : "Nobody is due a payout right now",
       );
     } else if (DONE[actionData.intent]) {
@@ -423,15 +467,42 @@ function payoutActions(payout, busy) {
     );
   }
 
+  // Out with PayPal and waiting on its confirmation: nothing to do but check.
+  if (payout.inFlight) {
+    return (
+      <s-stack direction="block" gap="small">
+        <s-badge tone="info">{payout.inFlight}</s-badge>
+        {payout.checkable && (
+          <Form method="post">
+            <input type="hidden" name="intent" value="check" />
+            <input type="hidden" name="payoutId" value={payout.id} />
+            <s-button type="submit" variant="tertiary" loading={busy("check", payout.id)}>
+              Check with PayPal
+            </s-button>
+          </Form>
+        )}
+      </s-stack>
+    );
+  }
+
   if (payout.status === "PENDING") {
     return (
       <s-stack direction="block" gap="small">
+        {payout.rail && (
+          <Form method="post">
+            <input type="hidden" name="intent" value="send" />
+            <input type="hidden" name="payoutId" value={payout.id} />
+            <s-button type="submit" variant="primary" loading={busy("send", payout.id)}>
+              {`Send with ${payout.rail === "PAYPAL" ? "PayPal" : "Stripe"}`}
+            </s-button>
+          </Form>
+        )}
         <Form method="post">
           <input type="hidden" name="intent" value="sent" />
           <input type="hidden" name="payoutId" value={payout.id} />
           <s-grid gridTemplateColumns="minmax(8rem, 1fr) auto" gap="small" alignItems="end">
             <s-text-field label="Bank or wallet reference" name="reference" placeholder="TRX…"></s-text-field>
-            <s-button type="submit" variant="primary" loading={busy("sent", payout.id)}>
+            <s-button type="submit" variant={payout.rail ? "secondary" : "primary"} loading={busy("sent", payout.id)}>
               Mark sent
             </s-button>
           </s-grid>

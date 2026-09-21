@@ -4,6 +4,7 @@ import { unauthenticated } from "../shopify.server";
 import { syncShopLedger } from "../models/ledger.server";
 import { issueMonthForEveryone, previousMonth } from "../models/invoice.server";
 import { payEveryoneDue } from "../models/payout.server";
+import { autoSend, refreshInFlight } from "../models/payout-rails.server";
 import { getShopSettings } from "../models/settings.server";
 import { syncRecentOrders } from "../models/vendor-order.server";
 import { pruneWebhookEvents } from "../models/webhook-event.server";
@@ -61,6 +62,9 @@ export const loader = async ({ request }) => {
       const settings = await getShopSettings(shop);
       const payday = isPayday(settings.payoutSchedule);
       const scheduled = payday ? await payEveryoneDue(shop, "schedule") : null;
+      if (scheduled?.created.length) await autoSend(shop, scheduled.created.map((payout) => payout.id));
+      // PayPal confirms in the background; settle whatever it has finished with.
+      const rails = await refreshInFlight(shop);
       // Last month's invoices on the 1st. Each vendor and month is issued once, however
       // many times this runs.
       const invoiced =
@@ -74,6 +78,7 @@ export const loader = async ({ request }) => {
         ledgerEntries: ledger.entries,
         payoutsSetAside: scheduled?.created.length ?? 0,
         invoicesIssued: invoiced?.issued.length ?? 0,
+        paypalSettled: rails.settled,
       });
     } catch (error) {
       // One shop with an expired token shouldn't stop the others.

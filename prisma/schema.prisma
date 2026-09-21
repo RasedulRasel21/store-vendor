@@ -101,6 +101,16 @@ model ShopSettings {
   // say how much to send and are copied onto each payout.
   payoutFxEnabled Boolean @default(false)
   payoutFxRates   Json?
+  // Automatic payout rails, sending from the merchant's own accounts. Credentials are
+  // encrypted; the *Account fields are only labels for Settings.
+  paypalMode        String?
+  paypalCredentials String?
+  paypalAccount     String?
+  stripeSecretKey   String?
+  stripeAccount     String?
+  // Send through a connected rail as soon as a payout is set aside, instead of waiting for
+  // the merchant to press Send.
+  autoSendPayouts   Boolean @default(false)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 }
@@ -419,6 +429,13 @@ model Payout {
   payoutCurrency String?
   payoutAmount   Decimal? @db.Decimal(14, 2)
   fxRate         Decimal? @db.Decimal(18, 8)
+
+  // Set when the payout went through PayPal or Stripe rather than by hand: which one, its
+  // id there, and the last status it reported.
+  provider       String?
+  providerRef    String?
+  providerStatus String?
+  sentAt         DateTime?
   note      String?
 
   // Set when the vendor asked for it rather than the merchant starting it.
@@ -611,6 +628,8 @@ enum PayoutMethod {
   PAYPAL
   PAYONEER
   WISE
+  // A Stripe account connected to the merchant's Stripe platform.
+  STRIPE
   OTHER
 }
 
@@ -680,6 +699,10 @@ model Vendor {
   taxInfo          Json?
   taxIdEncrypted   String?
   taxInfoUpdatedAt DateTime?
+
+  // The vendor's Stripe account on the merchant's Stripe platform, once they've started
+  // Stripe's onboarding. Only used for payouts after the merchant approves switching to it.
+  stripeAccountId String?
 
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt

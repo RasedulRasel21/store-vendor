@@ -32,6 +32,9 @@ import {
   updateTaxReporting,
 } from "../models/settings.server";
 import { SELLER_PLACEHOLDER } from "../models/invoice.server";
+import { connectPaypal, connectStripe, disconnectRail } from "../models/payout-rails.server";
+import { PAYPAL_CURRENCIES } from "../models/payout-rails/paypal.server";
+import db from "../db.server";
 import { formatDate } from "../utils/vendor-display";
 
 const ACTOR = "merchant";
@@ -74,6 +77,14 @@ export const loader = async ({ request }) => {
       requests: settings.payoutRequests,
       schedule: settings.payoutSchedule,
       refundKeepsCommission: settings.refundKeepsCommission,
+    },
+    // Labels only: the credentials themselves never leave the server.
+    rails: {
+      paypal: settings.paypalAccount ?? null,
+      stripe: settings.stripeAccount ?? null,
+      autoSend: settings.autoSendPayouts,
+      // Only worth warning about when the store's own currency can't go through PayPal.
+      currencyUnsupported: !PAYPAL_CURRENCIES.has(settings.currencyCode ?? currencyCode),
     },
     payoutFx: {
       enabled: settings.payoutFxEnabled,
@@ -158,6 +169,34 @@ export const action = async ({ request }) => {
       refundKeepsCommission: formData.get("refundKeepsCommission") === "on",
     });
     return { intent, errors: result.errors ?? null, saved: Boolean(result.saved) };
+  }
+
+  if (intent === "connectPaypal") {
+    const result = await connectPaypal(session.shop, {
+      clientId: String(formData.get("clientId") ?? ""),
+      secret: String(formData.get("secret") ?? ""),
+      mode: String(formData.get("mode") ?? ""),
+    });
+    return { intent, error: result.error ?? null, errors: result.errors ?? null, saved: Boolean(result.ok) };
+  }
+
+  if (intent === "connectStripe") {
+    const result = await connectStripe(session.shop, { secretKey: String(formData.get("secretKey") ?? "") });
+    return { intent, error: result.error ?? null, errors: result.errors ?? null, saved: Boolean(result.ok) };
+  }
+
+  if (intent === "disconnectRail") {
+    await disconnectRail(session.shop, String(formData.get("rail") ?? ""));
+    return { intent, error: null, saved: true };
+  }
+
+  if (intent === "autoSend") {
+    await db.shopSettings.upsert({
+      where: { shop: session.shop },
+      update: { autoSendPayouts: formData.get("autoSend") === "on" },
+      create: { shop: session.shop, autoSendPayouts: formData.get("autoSend") === "on" },
+    });
+    return { intent, error: null, saved: true };
   }
 
   if (intent === "payoutFx") {
@@ -293,7 +332,9 @@ export default function Settings() {
     invoices,
     taxReporting,
     payoutFx,
+    rails,
   } = useLoaderData();
+  const railErrors = ["connectPaypal", "connectStripe"].includes(actionData?.intent) ? (actionData.errors ?? {}) : {};
   const fxErrors = actionData?.intent === "payoutFx" ? (actionData.errors ?? {}) : {};
   const taxErrors = actionData?.intent === "taxReporting" ? (actionData.errors ?? {}) : {};
   const invoiceErrors = actionData?.intent === "invoices" ? (actionData.errors ?? {}) : {};
@@ -516,6 +557,120 @@ export default function Settings() {
             </s-stack>
           </s-stack>
         </Form>
+      </s-section>
+
+      <s-section heading="Automatic payouts">
+        <s-stack direction="block" gap="base">
+          <s-paragraph color="subdued">
+            Send payouts from your own PayPal or Stripe account instead of by hand. Vendors paid by
+            PayPal get it at their PayPal email; vendors who connect Stripe from the portal get a
+            transfer to their Stripe account. Try both with sandbox or test credentials first.
+          </s-paragraph>
+          {["connectPaypal", "connectStripe"].includes(actionData?.intent) && actionData.error && (
+            <s-banner tone="critical">{actionData.error}</s-banner>
+          )}
+          {rails.currencyUnsupported && (
+            <s-banner tone="info">
+              {`PayPal can't send ${currencyCode}, and Stripe may not hold it either. From a ${currencyCode} store these rails only work with currency conversion on, below, and vendors choosing a currency the rail supports, like USD.`}
+            </s-banner>
+          )}
+
+          <s-stack direction="block" gap="small">
+            <s-text type="strong">PayPal</s-text>
+            {rails.paypal ? (
+              <s-stack direction="inline" gap="small" alignItems="center">
+                <s-badge tone="success">Connected</s-badge>
+                <s-text color="subdued">{rails.paypal}</s-text>
+                <Form method="post">
+                  <input type="hidden" name="intent" value="disconnectRail" />
+                  <input type="hidden" name="rail" value="PAYPAL" />
+                  <s-button type="submit" variant="tertiary" tone="critical">
+                    Disconnect
+                  </s-button>
+                </Form>
+              </s-stack>
+            ) : (
+              <Form method="post">
+                <input type="hidden" name="intent" value="connectPaypal" />
+                <s-stack direction="block" gap="base">
+                  <s-grid gridTemplateColumns="minmax(0,10rem) minmax(0,1fr) minmax(0,1fr)" gap="base">
+                    <s-select label="Mode" name="mode" value="sandbox">
+                      <s-option value="sandbox">Sandbox</s-option>
+                      <s-option value="live">Live</s-option>
+                    </s-select>
+                    <s-text-field label="Client ID" name="clientId" error={railErrors.clientId}></s-text-field>
+                    <s-password-field
+                      label="Secret"
+                      name="secret"
+                      autocomplete="off"
+                      error={railErrors.secret}
+                    ></s-password-field>
+                  </s-grid>
+                  <s-stack direction="inline">
+                    <s-button type="submit" loading={submittingIntent === "connectPaypal"}>
+                      Connect PayPal
+                    </s-button>
+                  </s-stack>
+                </s-stack>
+              </Form>
+            )}
+          </s-stack>
+
+          <s-divider></s-divider>
+
+          <s-stack direction="block" gap="small">
+            <s-text type="strong">Stripe</s-text>
+            {rails.stripe ? (
+              <s-stack direction="inline" gap="small" alignItems="center">
+                <s-badge tone="success">Connected</s-badge>
+                <s-text color="subdued">{rails.stripe}</s-text>
+                <Form method="post">
+                  <input type="hidden" name="intent" value="disconnectRail" />
+                  <input type="hidden" name="rail" value="STRIPE" />
+                  <s-button type="submit" variant="tertiary" tone="critical">
+                    Disconnect
+                  </s-button>
+                </Form>
+              </s-stack>
+            ) : (
+              <Form method="post">
+                <input type="hidden" name="intent" value="connectStripe" />
+                <s-grid gridTemplateColumns="minmax(0,1fr) auto" gap="base" alignItems="end">
+                  <s-password-field
+                    label="Secret key"
+                    name="secretKey"
+                    autocomplete="off"
+                    placeholder="sk_test_…"
+                    details="Needs Stripe Connect switched on in your Stripe dashboard."
+                    error={railErrors.secretKey}
+                  ></s-password-field>
+                  <s-button type="submit" loading={submittingIntent === "connectStripe"}>
+                    Connect Stripe
+                  </s-button>
+                </s-grid>
+              </Form>
+            )}
+          </s-stack>
+
+          <s-divider></s-divider>
+
+          <Form method="post">
+            <input type="hidden" name="intent" value="autoSend" />
+            <s-stack direction="block" gap="small">
+              <s-checkbox
+                label="Send through PayPal or Stripe as soon as a payout is set aside"
+                name="autoSend"
+                defaultChecked={rails.autoSend}
+                details="Off: you press Send on each one. Anything a rail can't send waits for you either way."
+              ></s-checkbox>
+              <s-stack direction="inline">
+                <s-button type="submit" loading={submittingIntent === "autoSend"}>
+                  Save
+                </s-button>
+              </s-stack>
+            </s-stack>
+          </Form>
+        </s-stack>
       </s-section>
 
       <s-section heading="Paying vendors in other currencies">

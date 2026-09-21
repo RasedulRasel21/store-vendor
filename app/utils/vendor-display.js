@@ -81,6 +81,7 @@ const ACTIVITY_LABELS = {
   "payout.cancelled": "Payout called off",
   "payout.failed": "Payout bounced",
   "payout.requested": "Payout requested",
+  "payout.sent_by_rail": "Payout sent through PayPal or Stripe",
   "ledger.adjusted": "Balance adjusted by hand",
   "invoice.issued": "Commission invoice issued",
   "tax.updated": "Tax details updated",

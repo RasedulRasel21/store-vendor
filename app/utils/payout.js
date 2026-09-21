@@ -8,6 +8,7 @@ export const PAYOUT_METHOD = {
   PAYPAL: "PayPal",
   PAYONEER: "Payoneer",
   WISE: "Wise",
+  STRIPE: "Stripe",
   OTHER: "Other",
 };
 
@@ -22,6 +23,7 @@ const ACCOUNT_LABEL = {
   PAYPAL: "Email",
   PAYONEER: "Email",
   WISE: "Email",
+  STRIPE: "Stripe account",
   OTHER: "Where to send it",
 };
 
