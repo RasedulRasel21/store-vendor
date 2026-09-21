@@ -77,6 +77,18 @@ model ShopSettings {
   emailApiKey   String?
   emailFrom     String?
   emailReplyTo  String?
+  // The store as the seller on commission invoices. Invoices show a clear placeholder for
+  // anything not filled in, so they work before the real details are ready.
+  businessName      String?
+  businessAddress   String?
+  businessTaxId     String?
+  // What the tax is called where the store is: VAT, GST, Sales tax.
+  taxLabel          String  @default("VAT")
+  // Tax charged on the commission, as a percentage. Zero where commission isn't taxed.
+  commissionTaxRate Decimal @default(0) @db.Decimal(5, 2)
+  invoicePrefix     String  @default("SV-")
+  // Issue last month's invoices on the 1st without anyone clicking.
+  autoInvoices      Boolean @default(false)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 }
@@ -417,6 +429,42 @@ enum PayoutStatus {
   CANCELLED
 }
 
+// The store's invoice to a vendor for its commission over a month. Issued once and never
+// edited: everything printed is copied onto the row, and a refund after issue shows up as
+// a credit line on the next invoice rather than changing this one.
+model CommissionInvoice {
+  id       String @id @default(cuid())
+  shop     String
+  vendorId String
+  vendor   Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  // Sequential per store, like SV-2026-0001, as tax rules expect.
+  number   String
+  sequence Int
+
+  periodStart DateTime
+  periodEnd   DateTime
+
+  currencyCode String
+  net          Decimal @db.Decimal(12, 2)
+  taxLabel     String
+  taxRate      Decimal @db.Decimal(5, 2)
+  taxAmount    Decimal @db.Decimal(12, 2)
+  total        Decimal @db.Decimal(12, 2)
+
+  // [{ vendorOrderId, orderName, date, description, amount }]
+  lines  Json
+  // { name, address, taxId } for the store and the vendor as they were on the day.
+  seller Json
+  buyer  Json
+
+  issuedAt DateTime @default(now())
+
+  @@unique([shop, number])
+  @@unique([shop, vendorId, periodStart])
+  @@index([vendorId, issuedAt])
+}
+
 // Every email the app sends or would send. Written before the provider is called, so a
 // message that fails, or has no provider to go through, is still on record.
 model EmailMessage {
@@ -607,6 +655,14 @@ model Vendor {
   payoutDetails   Json?
   payoutUpdatedAt DateTime?
 
+  // Tax details for invoices and marketplace tax reporting (1099-K, DAC7):
+  // { entityType: INDIVIDUAL | BUSINESS, legalName, countryCode, taxIdType, taxIdLast4,
+  //   dateOfBirth?, address: { line1, line2?, city, postalCode, countryCode } }.
+  // The full tax ID is kept apart and encrypted, so it's never read by accident.
+  taxInfo          Json?
+  taxIdEncrypted   String?
+  taxInfoUpdatedAt DateTime?
+
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
@@ -619,6 +675,7 @@ model Vendor {
   movedOrderLines    OrderLineVendor[]     @relation("MovedToVendor")
   ledgerEntries      LedgerEntry[]
   payouts            Payout[]
+  invoices           CommissionInvoice[]
 
   @@unique([shop, handle])
   @@unique([shop, email])

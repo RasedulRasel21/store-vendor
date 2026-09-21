@@ -16,6 +16,13 @@ import { getShopCurrency, getShopSettings } from "../models/settings.server";
 import { syncCodRules } from "../models/cod-rules.server";
 import { adjustBalance, vendorBalance, vendorLedger } from "../models/ledger.server";
 import { createPayout } from "../models/payout.server";
+import {
+  issueInvoice,
+  listInvoices,
+  monthBounds,
+  periodLabel,
+  previousMonth,
+} from "../models/invoice.server";
 import { formatMoney } from "../utils/money";
 import { payoutRows } from "../utils/payout";
 import { effectiveCommission, formatCommission } from "../utils/commission";
@@ -46,6 +53,7 @@ const SUCCESS_MESSAGES = {
   commission: "Commission saved",
   fulfillment: "Shipping and cash on delivery saved",
   adjust: "Balance adjusted",
+  issueInvoice: "Invoice issued and sent to the vendor",
   pay: "Set aside. Send it from Payouts, then mark it sent.",
 };
 
@@ -78,10 +86,12 @@ export const loader = async ({ request, params }) => {
     getShopCurrency(admin),
   ]);
   const commission = effectiveCommission(vendor, settings);
-  const [balance, ledger] = await Promise.all([
+  const [balance, ledger, invoices] = await Promise.all([
     vendorBalance(session.shop, vendor.id, settings.payoutHoldDays),
     vendorLedger(session.shop, vendor.id, { take: 25 }),
+    listInvoices(session.shop, { vendorId: vendor.id, take: 12 }),
   ]);
+  const lastMonth = previousMonth();
 
   return {
     products,
@@ -92,6 +102,14 @@ export const loader = async ({ request, params }) => {
       inFlight: formatMoney(balance.inFlight, currencyCode),
       paid: formatMoney(balance.paid, currencyCode),
       canPay: Boolean(vendor.payoutMethod) && balance.available > 0,
+      lastMonth: periodLabel(monthBounds(lastMonth.year, lastMonth.month).start),
+      invoices: invoices.map((invoice) => ({
+        id: invoice.id,
+        number: invoice.number,
+        period: periodLabel(invoice.periodStart),
+        total: formatMoney(invoice.total, invoice.currencyCode),
+        credit: Number(invoice.total) < 0,
+      })),
       owesUs: balance.available < 0,
       entries: ledger.map((entry) => ({
         id: entry.id,
@@ -271,6 +289,20 @@ export const action = async ({ request, params }) => {
       const result = await createPayout(session.shop, params.id, { actor: ACTOR });
       return { intent, error: result.error ?? null };
     }
+    case "issueInvoice": {
+      const result = await issueInvoice(session.shop, params.id, previousMonth());
+      if (result.error) return { intent, error: result.error };
+      return {
+        intent,
+        error: null,
+        // Nothing went wrong in either case, so these are told plainly rather than as errors.
+        notice: result.empty
+          ? "No commission to bill last month"
+          : result.existed
+            ? `Already issued as ${result.invoice.number}`
+            : null,
+      };
+    }
     case "unlink-product": {
       const result = await unlinkProduct(
         admin,
@@ -322,7 +354,9 @@ export default function VendorDetail() {
       return;
     }
 
-    if (result.warning) {
+    if (result.notice) {
+      shopify.toast.show(result.notice);
+    } else if (result.warning) {
       shopify.toast.show(result.warning, { isError: true });
     } else if (SUCCESS_MESSAGES[result.intent]) {
       shopify.toast.show(SUCCESS_MESSAGES[result.intent]);
@@ -544,6 +578,29 @@ export default function VendorDetail() {
               </s-table-body>
             </s-table>
           )}
+
+          <s-divider></s-divider>
+
+          <s-stack direction="block" gap="small">
+            <s-stack direction="inline" gap="base" alignItems="center" justifyContent="space-between">
+              <s-text type="strong">Commission invoices</s-text>
+              <s-button onClick={() => submit("issueInvoice")} loading={busyIntent === "issueInvoice"}>
+                {`Issue ${earnings.lastMonth}`}
+              </s-button>
+            </s-stack>
+            {earnings.invoices.length ? (
+              earnings.invoices.map((invoice) => (
+                <s-stack key={invoice.id} direction="inline" gap="base" justifyContent="space-between">
+                  <s-link href={`/app/invoices/${invoice.id}`}>
+                    {`${invoice.credit ? "Credit note" : "Invoice"} ${invoice.number} · ${invoice.period}`}
+                  </s-link>
+                  <s-text>{invoice.total}</s-text>
+                </s-stack>
+              ))
+            ) : (
+              <s-text color="subdued">None issued yet.</s-text>
+            )}
+          </s-stack>
 
           <s-divider></s-divider>
 

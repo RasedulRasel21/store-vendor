@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import db from "../db.server";
 import { unauthenticated } from "../shopify.server";
 import { syncShopLedger } from "../models/ledger.server";
+import { issueMonthForEveryone, previousMonth } from "../models/invoice.server";
 import { payEveryoneDue } from "../models/payout.server";
 import { getShopSettings } from "../models/settings.server";
 import { syncRecentOrders } from "../models/vendor-order.server";
@@ -60,12 +61,19 @@ export const loader = async ({ request }) => {
       const settings = await getShopSettings(shop);
       const payday = isPayday(settings.payoutSchedule);
       const scheduled = payday ? await payEveryoneDue(shop, "schedule") : null;
+      // Last month's invoices on the 1st. Each vendor and month is issued once, however
+      // many times this runs.
+      const invoiced =
+        settings.autoInvoices && new Date().getUTCDate() === 1
+          ? await issueMonthForEveryone(shop, previousMonth())
+          : null;
 
       results.push({
         shop,
         ...synced,
         ledgerEntries: ledger.entries,
         payoutsSetAside: scheduled?.created.length ?? 0,
+        invoicesIssued: invoiced?.issued.length ?? 0,
       });
     } catch (error) {
       // One shop with an expired token shouldn't stop the others.

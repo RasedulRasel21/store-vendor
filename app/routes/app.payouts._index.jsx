@@ -13,6 +13,7 @@ import {
   payEveryoneDue,
   payoutOverview,
 } from "../models/payout.server";
+import { issueMonthForEveryone, previousMonth } from "../models/invoice.server";
 import { formatMoney } from "../utils/money";
 import { accountLabel, maskAccount, PAYOUT_METHOD } from "../utils/payout";
 import { formatDate } from "../utils/vendor-display";
@@ -103,6 +104,9 @@ export const action = async ({ request }) => {
   } else if (intent === "payAll") {
     const outcome = await payEveryoneDue(session.shop, ACTOR);
     return { intent, created: outcome.created.length, skipped: outcome.skipped, missingDetails: outcome.missingDetails };
+  } else if (intent === "invoiceAll") {
+    const outcome = await issueMonthForEveryone(session.shop, previousMonth());
+    return { intent, issued: outcome.issued.length, error: outcome.failed.join(" ") || null };
   } else if (intent === "sent") {
     result = await markPayoutPaid(session.shop, payoutId, {
       reference: String(formData.get("reference") ?? ""),
@@ -146,7 +150,13 @@ export default function Payouts() {
 
   useEffect(() => {
     if (!actionData || actionData.error) return;
-    if (actionData.intent === "payAll") {
+    if (actionData.intent === "invoiceAll") {
+      shopify.toast.show(
+        actionData.issued
+          ? `${actionData.issued} ${actionData.issued === 1 ? "invoice" : "invoices"} issued and sent`
+          : "Nothing to invoice for last month",
+      );
+    } else if (actionData.intent === "payAll") {
       shopify.toast.show(
         actionData.created
           ? `${actionData.created} ${actionData.created === 1 ? "payout" : "payouts"} ready to send`
@@ -199,6 +209,13 @@ export default function Payouts() {
         }
       >
         Export bank file
+      </s-button>
+      <s-button
+        slot="secondary-actions"
+        loading={busy("invoiceAll")}
+        onClick={() => submit({ intent: "invoiceAll" }, { method: "post" })}
+      >
+        Issue last month&apos;s invoices
       </s-button>
       {[thisYear, thisYear - 1].map((year) => (
         <s-button

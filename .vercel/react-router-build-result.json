@@ -41,6 +41,7 @@
       "routes/app.approvals.$id": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/app.orders.export": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/app.orders._index": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/app.invoices.$id": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/app.changes.$id": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/app.vendors.$id": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/app.vendors.new": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
@@ -347,6 +348,15 @@
           "runtime": "nodejs"
         }
       },
+      "routes/app.invoices.$id": {
+        "id": "routes/app.invoices.$id",
+        "parentId": "routes/app",
+        "file": "app/routes/app.invoices.$id.jsx",
+        "path": "invoices/:id",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
       "routes/app.changes.$id": {
         "id": "routes/app.changes.$id",
         "parentId": "routes/app",
@@ -628,6 +638,12 @@
         "path": "orders",
         "index": true
       },
+      "routes/app.invoices.$id": {
+        "id": "routes/app.invoices.$id",
+        "parentId": "routes/app",
+        "file": "routes/app.invoices.$id.jsx",
+        "path": "invoices/:id"
+      },
       "routes/app.changes.$id": {
         "id": "routes/app.changes.$id",
         "parentId": "routes/app",
@@ -850,6 +866,11 @@
                 "file": "routes/app.orders._index.jsx",
                 "path": "orders",
                 "index": true
+              },
+              {
+                "id": "routes/app.invoices.$id",
+                "file": "routes/app.invoices.$id.jsx",
+                "path": "invoices/:id"
               },
               {
                 "id": "routes/app.changes.$id",

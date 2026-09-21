@@ -82,6 +82,8 @@ const ACTIVITY_LABELS = {
   "payout.failed": "Payout bounced",
   "payout.requested": "Payout requested",
   "ledger.adjusted": "Balance adjusted by hand",
+  "invoice.issued": "Commission invoice issued",
+  "tax.updated": "Tax details updated",
   "return.approved": "Return approved by the vendor",
   "return.declined": "Return declined by the vendor",
   "return.restocked": "Returned items put back in stock",

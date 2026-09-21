@@ -23,9 +23,11 @@ import {
   shopLocations,
   updateDefaultCommission,
   updateFulfillmentDays,
+  updateInvoiceSettings,
   updatePayoutSettings,
   updateRestockLocation,
 } from "../models/settings.server";
+import { SELLER_PLACEHOLDER } from "../models/invoice.server";
 import { formatDate } from "../utils/vendor-display";
 
 const ACTOR = "merchant";
@@ -68,6 +70,16 @@ export const loader = async ({ request }) => {
       requests: settings.payoutRequests,
       schedule: settings.payoutSchedule,
       refundKeepsCommission: settings.refundKeepsCommission,
+    },
+    invoices: {
+      businessName: settings.businessName ?? "",
+      businessAddress: settings.businessAddress ?? "",
+      businessTaxId: settings.businessTaxId ?? "",
+      taxLabel: settings.taxLabel,
+      taxRate: String(settings.commissionTaxRate),
+      prefix: settings.invoicePrefix,
+      autoInvoices: settings.autoInvoices,
+      placeholder: SELLER_PLACEHOLDER,
     },
     // As with carrier keys, only whether email is connected leaves the server.
     email: {
@@ -126,6 +138,19 @@ export const action = async ({ request }) => {
       requests: formData.get("requests") === "on",
       schedule: String(formData.get("schedule") ?? ""),
       refundKeepsCommission: formData.get("refundKeepsCommission") === "on",
+    });
+    return { intent, errors: result.errors ?? null, saved: Boolean(result.saved) };
+  }
+
+  if (intent === "invoices") {
+    const result = await updateInvoiceSettings(session.shop, {
+      businessName: formData.get("businessName"),
+      businessAddress: formData.get("businessAddress"),
+      businessTaxId: formData.get("businessTaxId"),
+      taxLabel: formData.get("taxLabel"),
+      taxRate: formData.get("taxRate"),
+      prefix: formData.get("prefix"),
+      autoInvoices: formData.get("autoInvoices") === "on",
     });
     return { intent, errors: result.errors ?? null, saved: Boolean(result.saved) };
   }
@@ -229,7 +254,9 @@ export default function Settings() {
     labels,
     payouts,
     email,
+    invoices,
   } = useLoaderData();
+  const invoiceErrors = actionData?.intent === "invoices" ? (actionData.errors ?? {}) : {};
   const emailErrors = actionData?.intent === "connectEmail" ? (actionData.errors ?? {}) : {};
   const actionData = useActionData();
   const navigation = useNavigation();
@@ -445,6 +472,77 @@ export default function Settings() {
             <s-stack direction="inline">
               <s-button type="submit" loading={submittingIntent === "syncCollections"}>
                 Sync now
+              </s-button>
+            </s-stack>
+          </s-stack>
+        </Form>
+      </s-section>
+
+      <s-section heading="Commission invoices">
+        <Form method="post">
+          <input type="hidden" name="intent" value="invoices" />
+          <s-stack direction="block" gap="base">
+            <s-paragraph color="subdued">
+              Each month vendors get an invoice for the commission you took, numbered in sequence.
+              Anything left blank prints as a placeholder, and invoices never change once issued, so
+              fill these in before real invoices go out.
+            </s-paragraph>
+            <s-grid gridTemplateColumns="minmax(0,1fr) minmax(0,1fr)" gap="base">
+              <s-text-field
+                label="Legal business name"
+                name="businessName"
+                defaultValue={invoices.businessName}
+                placeholder={invoices.placeholder.name}
+              ></s-text-field>
+              <s-text-field
+                label="Tax number"
+                name="businessTaxId"
+                defaultValue={invoices.businessTaxId}
+                placeholder={invoices.placeholder.taxId}
+                details="VAT, GST, BIN or TIN, as it appears on your registration."
+              ></s-text-field>
+            </s-grid>
+            <s-text-area
+              label="Business address"
+              name="businessAddress"
+              rows={2}
+              defaultValue={invoices.businessAddress}
+              placeholder={invoices.placeholder.address}
+            ></s-text-area>
+            <s-grid gridTemplateColumns="minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)" gap="base">
+              <s-text-field
+                label="Tax is called"
+                name="taxLabel"
+                defaultValue={invoices.taxLabel}
+                placeholder="VAT"
+              ></s-text-field>
+              <s-number-field
+                label="Tax on commission"
+                name="taxRate"
+                suffix="%"
+                inputMode="decimal"
+                step={0.01}
+                min={0}
+                max={100}
+                defaultValue={invoices.taxRate}
+                details="0 where commission isn't taxed."
+                error={invoiceErrors.taxRate}
+              ></s-number-field>
+              <s-text-field
+                label="Invoice numbers start with"
+                name="prefix"
+                defaultValue={invoices.prefix}
+                error={invoiceErrors.prefix}
+              ></s-text-field>
+            </s-grid>
+            <s-checkbox
+              label="Issue last month's invoices automatically on the 1st"
+              name="autoInvoices"
+              defaultChecked={invoices.autoInvoices}
+            ></s-checkbox>
+            <s-stack direction="inline">
+              <s-button type="submit" loading={submittingIntent === "invoices"}>
+                Save
               </s-button>
             </s-stack>
           </s-stack>

@@ -124,6 +124,30 @@ export async function updatePayoutSettings(shop, { holdDays, minimum, requests, 
   return { saved: true };
 }
 
+// The store as a seller on commission invoices. Blank fields are allowed: invoices print a
+// clear placeholder for them until they're filled in.
+export async function updateInvoiceSettings(shop, input) {
+  const text = (value, max) => String(value ?? "").trim().slice(0, max);
+  const rate = Number(input.taxRate);
+  const prefix = text(input.prefix, 12);
+  const errors = {};
+  if (!Number.isFinite(rate) || rate < 0 || rate > 100) errors.taxRate = "Use a rate between 0 and 100";
+  if (!/^[A-Za-z0-9-]{1,12}$/.test(prefix)) errors.prefix = "Letters, numbers and dashes, up to 12";
+  if (Object.keys(errors).length) return { errors };
+
+  const data = {
+    businessName: text(input.businessName, 200) || null,
+    businessAddress: text(input.businessAddress, 500) || null,
+    businessTaxId: text(input.businessTaxId, 60) || null,
+    taxLabel: text(input.taxLabel, 20) || "VAT",
+    commissionTaxRate: rate.toFixed(2),
+    invoicePrefix: prefix,
+    autoInvoices: Boolean(input.autoInvoices),
+  };
+  await db.shopSettings.upsert({ where: { shop }, update: data, create: { shop, ...data } });
+  return { saved: true };
+}
+
 export function dismissSetupGuide(shop) {
   const now = new Date();
   return db.shopSettings.upsert({
