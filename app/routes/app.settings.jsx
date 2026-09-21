@@ -26,6 +26,7 @@ import {
   updateInvoiceSettings,
   updatePayoutSettings,
   updateRestockLocation,
+  updateTaxReporting,
 } from "../models/settings.server";
 import { SELLER_PLACEHOLDER } from "../models/invoice.server";
 import { formatDate } from "../utils/vendor-display";
@@ -70,6 +71,12 @@ export const loader = async ({ request }) => {
       requests: settings.payoutRequests,
       schedule: settings.payoutSchedule,
       refundKeepsCommission: settings.refundKeepsCommission,
+    },
+    taxReporting: {
+      us1099kAmount: String(settings.us1099kAmount),
+      us1099kTransactions: String(settings.us1099kTransactions),
+      dac7MinTransactions: String(settings.dac7MinTransactions),
+      dac7MinAmount: String(settings.dac7MinAmount),
     },
     invoices: {
       businessName: settings.businessName ?? "",
@@ -138,6 +145,16 @@ export const action = async ({ request }) => {
       requests: formData.get("requests") === "on",
       schedule: String(formData.get("schedule") ?? ""),
       refundKeepsCommission: formData.get("refundKeepsCommission") === "on",
+    });
+    return { intent, errors: result.errors ?? null, saved: Boolean(result.saved) };
+  }
+
+  if (intent === "taxReporting") {
+    const result = await updateTaxReporting(session.shop, {
+      us1099kAmount: formData.get("us1099kAmount"),
+      us1099kTransactions: formData.get("us1099kTransactions"),
+      dac7MinTransactions: formData.get("dac7MinTransactions"),
+      dac7MinAmount: formData.get("dac7MinAmount"),
     });
     return { intent, errors: result.errors ?? null, saved: Boolean(result.saved) };
   }
@@ -255,7 +272,9 @@ export default function Settings() {
     payouts,
     email,
     invoices,
+    taxReporting,
   } = useLoaderData();
+  const taxErrors = actionData?.intent === "taxReporting" ? (actionData.errors ?? {}) : {};
   const invoiceErrors = actionData?.intent === "invoices" ? (actionData.errors ?? {}) : {};
   const emailErrors = actionData?.intent === "connectEmail" ? (actionData.errors ?? {}) : {};
   const actionData = useActionData();
@@ -542,6 +561,64 @@ export default function Settings() {
             ></s-checkbox>
             <s-stack direction="inline">
               <s-button type="submit" loading={submittingIntent === "invoices"}>
+                Save
+              </s-button>
+            </s-stack>
+          </s-stack>
+        </Form>
+      </s-section>
+
+      <s-section heading="Tax reporting">
+        <Form method="post">
+          <input type="hidden" name="intent" value="taxReporting" />
+          <s-stack direction="block" gap="base">
+            <s-paragraph color="subdued">
+              As the marketplace operator you report vendors&apos; sales: 1099-K for vendors in the US,
+              DAC7 for vendors in the EU. Vendors add their tax details in the portal, and the reports
+              under Payouts flag anyone missing something. These limits change with the law, so check
+              them before you file.
+            </s-paragraph>
+            <s-grid gridTemplateColumns="minmax(0,1fr) minmax(0,1fr)" gap="base">
+              <s-number-field
+                label="1099-K: report from"
+                name="us1099kAmount"
+                suffix={currencyCode}
+                inputMode="decimal"
+                min={0}
+                defaultValue={taxReporting.us1099kAmount}
+                error={taxErrors.us1099kAmount}
+              ></s-number-field>
+              <s-number-field
+                label="1099-K: and at least"
+                name="us1099kTransactions"
+                suffix="sales"
+                inputMode="numeric"
+                min={0}
+                defaultValue={taxReporting.us1099kTransactions}
+                error={taxErrors.us1099kTransactions}
+              ></s-number-field>
+              <s-number-field
+                label="DAC7: exempt below"
+                name="dac7MinTransactions"
+                suffix="sales"
+                inputMode="numeric"
+                min={0}
+                defaultValue={taxReporting.dac7MinTransactions}
+                error={taxErrors.dac7MinTransactions}
+              ></s-number-field>
+              <s-number-field
+                label="DAC7: and below"
+                name="dac7MinAmount"
+                suffix={currencyCode}
+                inputMode="decimal"
+                min={0}
+                defaultValue={taxReporting.dac7MinAmount}
+                details="The EU limit is €2,000; set its equivalent in your currency."
+                error={taxErrors.dac7MinAmount}
+              ></s-number-field>
+            </s-grid>
+            <s-stack direction="inline">
+              <s-button type="submit" loading={submittingIntent === "taxReporting"}>
                 Save
               </s-button>
             </s-stack>

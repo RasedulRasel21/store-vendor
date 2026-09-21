@@ -148,6 +148,29 @@ export async function updateInvoiceSettings(shop, input) {
   return { saved: true };
 }
 
+// Thresholds for the tax reports. Kept as settings because the law moves them.
+export async function updateTaxReporting(shop, input) {
+  const amount = Number(input.us1099kAmount);
+  const count = Math.trunc(Number(input.us1099kTransactions));
+  const dacCount = Math.trunc(Number(input.dac7MinTransactions));
+  const dacAmount = Number(input.dac7MinAmount);
+  const errors = {};
+  if (!Number.isFinite(amount) || amount < 0) errors.us1099kAmount = "Use zero or more";
+  if (!Number.isFinite(count) || count < 0) errors.us1099kTransactions = "Use zero or more";
+  if (!Number.isFinite(dacCount) || dacCount < 0) errors.dac7MinTransactions = "Use zero or more";
+  if (!Number.isFinite(dacAmount) || dacAmount < 0) errors.dac7MinAmount = "Use zero or more";
+  if (Object.keys(errors).length) return { errors };
+
+  const data = {
+    us1099kAmount: amount.toFixed(2),
+    us1099kTransactions: count,
+    dac7MinTransactions: dacCount,
+    dac7MinAmount: dacAmount.toFixed(2),
+  };
+  await db.shopSettings.upsert({ where: { shop }, update: data, create: { shop, ...data } });
+  return { saved: true };
+}
+
 export function dismissSetupGuide(shop) {
   const now = new Date();
   return db.shopSettings.upsert({

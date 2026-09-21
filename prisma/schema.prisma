@@ -89,6 +89,13 @@ model ShopSettings {
   invoicePrefix     String  @default("SV-")
   // Issue last month's invoices on the 1st without anyone clicking.
   autoInvoices      Boolean @default(false)
+  // Marketplace tax reporting thresholds. They change with the law, so they're settings:
+  // US 1099-K (federal: $20,000 and 200 transactions) and the EU DAC7 exemption for goods
+  // sellers (fewer than 30 sales and under €2,000 a year).
+  us1099kAmount       Decimal @default(20000) @db.Decimal(12, 2)
+  us1099kTransactions Int     @default(200)
+  dac7MinTransactions Int     @default(30)
+  dac7MinAmount       Decimal @default(2000) @db.Decimal(12, 2)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 }

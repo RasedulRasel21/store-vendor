@@ -150,6 +150,27 @@ export const loader = async ({ request, params }) => {
         vendor.codMaxOrderValue === null ? "" : String(vendor.codMaxOrderValue),
       payout: payoutRows(vendor.payoutMethod, vendor.payoutDetails),
       payoutUpdatedAt: formatDate(vendor.payoutUpdatedAt),
+      // Only the last four digits of the tax ID ever leave the server.
+      tax: vendor.taxInfo
+        ? [
+            { label: "Registered as", value: vendor.taxInfo.entityType === "BUSINESS" ? "Business" : "Individual" },
+            { label: "Legal name", value: vendor.taxInfo.legalName },
+            { label: vendor.taxInfo.taxIdType ?? "Tax ID", value: `•••• ${vendor.taxInfo.taxIdLast4 ?? ""}` },
+            { label: "Country", value: vendor.taxInfo.countryCode },
+            ...(vendor.taxInfo.dateOfBirth ? [{ label: "Date of birth", value: vendor.taxInfo.dateOfBirth }] : []),
+            {
+              label: "Address",
+              value: [
+                vendor.taxInfo.address?.line1,
+                vendor.taxInfo.address?.line2,
+                [vendor.taxInfo.address?.city, vendor.taxInfo.address?.postalCode].filter(Boolean).join(" "),
+              ]
+                .filter(Boolean)
+                .join(", "),
+            },
+          ]
+        : [],
+      taxUpdatedAt: formatDate(vendor.taxInfoUpdatedAt),
       pendingPayoutRequestId: vendor.changeRequests[0]?.id ?? null,
       address: [
         vendor.addressLine1,
@@ -507,6 +528,27 @@ export default function VendorDetail() {
             <s-text color="subdued">{`Last approved ${vendor.payoutUpdatedAt}`}</s-text>
           )}
         </s-stack>
+      </s-section>
+
+      <s-section heading="Tax details">
+        {vendor.tax.length ? (
+          <s-stack direction="block" gap="base">
+            <s-grid gridTemplateColumns="auto 1fr" gap="base">
+              {vendor.tax.map((row) => [
+                <s-text key={`${row.label}-label`} color="subdued">
+                  {row.label}
+                </s-text>,
+                <s-text key={`${row.label}-value`}>{row.value || "—"}</s-text>,
+              ])}
+            </s-grid>
+            {vendor.taxUpdatedAt && <s-text color="subdued">{`Last updated ${vendor.taxUpdatedAt}`}</s-text>}
+          </s-stack>
+        ) : (
+          <s-paragraph color="subdued">
+            Not added yet. The vendor adds them from Settings in the portal; you need them for 1099-K
+            or DAC7 reports if they sell above the limits.
+          </s-paragraph>
+        )}
       </s-section>
 
       <s-section heading="Earnings">

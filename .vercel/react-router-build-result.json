@@ -27,6 +27,7 @@
       "routes/api.portal.return": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/webhooks.returns": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/api.order-split": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/api.portal.tax": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/auth.login": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/auth.$": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/_index": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
@@ -43,6 +44,7 @@
       "routes/app.orders._index": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/app.invoices.$id": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/app.changes.$id": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/app.payouts.tax": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/app.vendors.$id": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/app.vendors.new": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/app.orders.$id": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
@@ -210,6 +212,15 @@
           "runtime": "nodejs"
         }
       },
+      "routes/api.portal.tax": {
+        "id": "routes/api.portal.tax",
+        "parentId": "root",
+        "file": "app/routes/api.portal.tax.jsx",
+        "path": "api/portal/tax",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
       "routes/auth.login": {
         "id": "routes/auth.login",
         "parentId": "root",
@@ -362,6 +373,15 @@
         "parentId": "routes/app",
         "file": "app/routes/app.changes.$id.jsx",
         "path": "changes/:id",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/app.payouts.tax": {
+        "id": "routes/app.payouts.tax",
+        "parentId": "routes/app",
+        "file": "app/routes/app.payouts.tax.jsx",
+        "path": "payouts/tax",
         "config": {
           "runtime": "nodejs"
         }
@@ -543,6 +563,12 @@
         "file": "routes/api.order-split.jsx",
         "path": "api/order-split"
       },
+      "routes/api.portal.tax": {
+        "id": "routes/api.portal.tax",
+        "parentId": "root",
+        "file": "routes/api.portal.tax.jsx",
+        "path": "api/portal/tax"
+      },
       "routes/auth.login": {
         "id": "routes/auth.login",
         "parentId": "root",
@@ -649,6 +675,12 @@
         "parentId": "routes/app",
         "file": "routes/app.changes.$id.jsx",
         "path": "changes/:id"
+      },
+      "routes/app.payouts.tax": {
+        "id": "routes/app.payouts.tax",
+        "parentId": "routes/app",
+        "file": "routes/app.payouts.tax.jsx",
+        "path": "payouts/tax"
       },
       "routes/app.vendors.$id": {
         "id": "routes/app.vendors.$id",
@@ -788,6 +820,11 @@
             "path": "api/order-split"
           },
           {
+            "id": "routes/api.portal.tax",
+            "file": "routes/api.portal.tax.jsx",
+            "path": "api/portal/tax"
+          },
+          {
             "id": "routes/auth.login",
             "file": "routes/auth.login/route.jsx",
             "path": "auth/login"
@@ -876,6 +913,11 @@
                 "id": "routes/app.changes.$id",
                 "file": "routes/app.changes.$id.jsx",
                 "path": "changes/:id"
+              },
+              {
+                "id": "routes/app.payouts.tax",
+                "file": "routes/app.payouts.tax.jsx",
+                "path": "payouts/tax"
               },
               {
                 "id": "routes/app.vendors.$id",

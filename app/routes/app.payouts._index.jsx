@@ -227,6 +227,22 @@ export default function Payouts() {
           {`${year} summary`}
         </s-button>
       ))}
+      {/* Filed for last year; this year too, so a running year can be checked early. */}
+      {[
+        { type: "1099k", label: "1099-K" },
+        { type: "dac7", label: "DAC7" },
+      ].flatMap((report) =>
+        [thisYear - 1, thisYear].map((year) => (
+          <s-button
+            key={`${report.type}-${year}`}
+            slot="secondary-actions"
+            loading={exporting === `/app/payouts/tax?type=${report.type}&year=${year}`}
+            onClick={() => download(`/app/payouts/tax?type=${report.type}&year=${year}`, `${report.type}-${year}.csv`)}
+          >
+            {`${report.label} ${year}`}
+          </s-button>
+        )),
+      )}
 
       {actionData?.error && <s-banner tone="critical">{actionData.error}</s-banner>}
       {actionData?.intent === "payAll" && (actionData.skipped?.length > 0 || actionData.missingDetails > 0) && (
