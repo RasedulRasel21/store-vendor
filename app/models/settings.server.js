@@ -101,15 +101,25 @@ export async function updateRestockLocation(shop, locationId, locations) {
 
 // The hold, the minimum and whether vendors can ask. Bounded so a typo can't release
 // money the day it's taken, or hold it for a year.
-export async function updatePayoutSettings(shop, { holdDays, minimum, requests }) {
+export const PAYOUT_SCHEDULES = ["MANUAL", "WEEKLY", "MONTHLY"];
+
+export async function updatePayoutSettings(shop, { holdDays, minimum, requests, schedule, refundKeepsCommission }) {
   const days = Math.trunc(Number(holdDays));
   const floor = Number(minimum);
   const errors = {};
   if (!Number.isFinite(days) || days < 0 || days > 90) errors.holdDays = "Choose between 0 and 90 days";
   if (!Number.isFinite(floor) || floor < 0) errors.minimum = "Use zero or more";
+  if (!PAYOUT_SCHEDULES.includes(schedule)) errors.schedule = "Choose when payouts are made";
   if (Object.keys(errors).length) return { errors };
 
-  const data = { payoutHoldDays: days, payoutMinimum: floor.toFixed(2), payoutRequests: Boolean(requests) };
+  const data = {
+    payoutHoldDays: days,
+    payoutMinimum: floor.toFixed(2),
+    payoutRequests: Boolean(requests),
+    payoutSchedule: schedule,
+    // Only orders placed from now on follow a change; older ones keep the rule they had.
+    refundKeepsCommission: Boolean(refundKeepsCommission),
+  };
   await db.shopSettings.upsert({ where: { shop }, update: data, create: { shop, ...data } });
   return { saved: true };
 }

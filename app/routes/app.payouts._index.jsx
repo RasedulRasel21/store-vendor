@@ -138,7 +138,7 @@ export default function Payouts() {
   const navigation = useNavigation();
   const submit = useSubmit();
   const shopify = useAppBridge();
-  const [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState(null);
   const busy = (intent, id) =>
     navigation.state === "submitting" &&
     navigation.formData?.get("intent") === intent &&
@@ -159,26 +159,27 @@ export default function Payouts() {
 
   // Fetched inside the admin frame, where the session token is added, then handed to the
   // browser to save. Opening the URL in a new tab would have no session.
-  const exportBankFile = async () => {
-    setExporting(true);
+  const download = async (path, filename) => {
+    setExporting(path);
     try {
-      const response = await fetch("/app/payouts/export");
+      const response = await fetch(path);
       if (!response.ok) throw new Error(`Export failed with ${response.status}`);
       const url = URL.createObjectURL(await response.blob());
       const link = document.createElement("a");
       link.href = url;
-      link.download = `vendor-payouts-${new Date().toISOString().slice(0, 10)}.csv`;
+      link.download = filename;
       document.body.append(link);
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
     } catch (error) {
       console.error(error);
-      shopify.toast.show("The bank file couldn't be created. Try again.", { isError: true });
+      shopify.toast.show("The file couldn't be created. Try again.", { isError: true });
     } finally {
-      setExporting(false);
+      setExporting(null);
     }
   };
+  const thisYear = new Date().getFullYear();
 
   return (
     <s-page heading="Payouts">
@@ -190,9 +191,25 @@ export default function Payouts() {
       >
         Pay everyone due
       </s-button>
-      <s-button slot="secondary-actions" loading={exporting} onClick={exportBankFile}>
+      <s-button
+        slot="secondary-actions"
+        loading={exporting === "/app/payouts/export"}
+        onClick={() =>
+          download("/app/payouts/export", `vendor-payouts-${new Date().toISOString().slice(0, 10)}.csv`)
+        }
+      >
         Export bank file
       </s-button>
+      {[thisYear, thisYear - 1].map((year) => (
+        <s-button
+          key={year}
+          slot="secondary-actions"
+          loading={exporting === `/app/payouts/report?year=${year}`}
+          onClick={() => download(`/app/payouts/report?year=${year}`, `vendor-summary-${year}.csv`)}
+        >
+          {`${year} summary`}
+        </s-button>
+      ))}
 
       {actionData?.error && <s-banner tone="critical">{actionData.error}</s-banner>}
       {actionData?.intent === "payAll" && (actionData.skipped?.length > 0 || actionData.missingDetails > 0) && (

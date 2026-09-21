@@ -59,6 +59,8 @@ export const loader = async ({ request }) => {
       holdDays: String(settings.payoutHoldDays),
       minimum: String(settings.payoutMinimum),
       requests: settings.payoutRequests,
+      schedule: settings.payoutSchedule,
+      refundKeepsCommission: settings.refundKeepsCommission,
     },
     // The key itself never leaves the server; only whether one is connected.
     labels: {
@@ -109,6 +111,8 @@ export const action = async ({ request }) => {
       holdDays: formData.get("holdDays"),
       minimum: formData.get("minimum"),
       requests: formData.get("requests") === "on",
+      schedule: String(formData.get("schedule") ?? ""),
+      refundKeepsCommission: formData.get("refundKeepsCommission") === "on",
     });
     return { intent, errors: result.errors ?? null, saved: Boolean(result.saved) };
   }
@@ -281,11 +285,29 @@ export default function Settings() {
                 error={actionData?.intent === "payouts" ? actionData.errors?.minimum : undefined}
               ></s-number-field>
             </s-grid>
+            <s-grid gridTemplateColumns="minmax(0,20rem)" gap="base">
+              <s-select
+                label="Set payouts aside"
+                name="schedule"
+                value={payouts.schedule}
+                details="Everyone due goes onto your To send list. You still send the money yourself."
+              >
+                <s-option value="MANUAL">When I click Pay</s-option>
+                <s-option value="WEEKLY">Every Monday</s-option>
+                <s-option value="MONTHLY">On the 1st of each month</s-option>
+              </s-select>
+            </s-grid>
             <s-checkbox
               label="Vendors can ask for their available balance"
               name="requests"
               defaultChecked={payouts.requests}
               details="You still accept or decline each request."
+            ></s-checkbox>
+            <s-checkbox
+              label="Keep my commission when an order is refunded"
+              name="refundKeepsCommission"
+              defaultChecked={payouts.refundKeepsCommission}
+              details="Off: a refund takes back your commission on those items as well as the vendor's share. On: the vendor carries the whole refund. Applies to orders placed from now on."
             ></s-checkbox>
             <s-stack direction="inline">
               <s-button type="submit" loading={submittingIntent === "payouts"}>

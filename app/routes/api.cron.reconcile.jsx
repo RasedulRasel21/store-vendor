@@ -2,6 +2,8 @@ import crypto from "node:crypto";
 import db from "../db.server";
 import { unauthenticated } from "../shopify.server";
 import { syncShopLedger } from "../models/ledger.server";
+import { payEveryoneDue } from "../models/payout.server";
+import { getShopSettings } from "../models/settings.server";
 import { syncRecentOrders } from "../models/vendor-order.server";
 import { pruneWebhookEvents } from "../models/webhook-event.server";
 
@@ -22,6 +24,14 @@ function authorized(request) {
 
   // eslint-disable-next-line no-undef
   return crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(secret));
+}
+
+// The job runs at 02:00 UTC, which is the start of the working day across South Asia
+// and still the day before in the Americas; payout days are counted in UTC either way.
+function isPayday(schedule, now = new Date()) {
+  if (schedule === "WEEKLY") return now.getUTCDay() === 1;
+  if (schedule === "MONTHLY") return now.getUTCDate() === 1;
+  return false;
 }
 
 export const loader = async ({ request }) => {
@@ -45,7 +55,18 @@ export const loader = async ({ request }) => {
       const ledger = await syncShopLedger(shop, {
         since: new Date(Date.now() - DAYS * 24 * 60 * 60 * 1000),
       });
-      results.push({ shop, ...synced, ledgerEntries: ledger.entries });
+      // On a payout day everyone due is set aside, ready for the merchant to send. Running
+      // twice on the same day finds nothing left to set aside, so it can't double up.
+      const settings = await getShopSettings(shop);
+      const payday = isPayday(settings.payoutSchedule);
+      const scheduled = payday ? await payEveryoneDue(shop, "schedule") : null;
+
+      results.push({
+        shop,
+        ...synced,
+        ledgerEntries: ledger.entries,
+        payoutsSetAside: scheduled?.created.length ?? 0,
+      });
     } catch (error) {
       // One shop with an expired token shouldn't stop the others.
       console.error(`Nightly reconcile failed for ${shop}`, error);

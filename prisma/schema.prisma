@@ -66,6 +66,11 @@ model ShopSettings {
   payoutMinimum  Decimal @default(0) @db.Decimal(12, 2)
   // Whether vendors can ask for their available balance instead of waiting.
   payoutRequests Boolean @default(true)
+  // MANUAL, WEEKLY (Mondays) or MONTHLY (the 1st): when everyone due is set aside to pay.
+  payoutSchedule String  @default("MANUAL")
+  // Off: a refund hands back the store's commission on the refunded items too. On: the
+  // store keeps its commission and the vendor carries the whole refund.
+  refundKeepsCommission Boolean @default(false)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 }
@@ -197,6 +202,10 @@ model VendorOrder {
   commission Decimal @db.Decimal(12, 2)
   shipping   Decimal @default(0) @db.Decimal(12, 2)
   earnings   Decimal @db.Decimal(12, 2)
+
+  // The store's refund rule when this order came in, so changing the setting later
+  // doesn't rewrite refunds on orders sold under the old rule.
+  refundKeepsCommission Boolean @default(false)
 
   // Refunds reverse part of the sale. Payable earnings are earnings minus refundedEarnings.
   refunded           Decimal @default(0) @db.Decimal(12, 2)

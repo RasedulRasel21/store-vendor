@@ -344,20 +344,35 @@ export async function splitOrder(admin, shop, orderGid) {
     order.fulfillmentOrders?.nodes?.find((node) => node.deliveryMethod?.methodType)?.deliveryMethod
       ?.methodType ?? null;
 
+  // Each vendor order keeps the refund rule it was sold under; only new ones take today's.
+  const soldUnder = new Map(
+    (
+      await db.vendorOrder.findMany({
+        where: { shop, orderId: order.id },
+        select: { vendorId: true, refundKeepsCommission: true },
+      })
+    ).map((row) => [row.vendorId, row.refundKeepsCommission]),
+  );
+
   const touched = [];
   for (const { vendor, lines } of groups.values()) {
     const subtotal = round2(lines.reduce((sum, line) => sum + Number(line.subtotal), 0));
     const commission = round2(lines.reduce((sum, line) => sum + Number(line.commission), 0));
     const shipping = shippingForVendor(vendor);
+    const refundKeepsCommission = soldUnder.get(vendor.id) ?? settings.refundKeepsCommission;
     const refundedItems = round2(lines.reduce((sum, line) => sum + Number(line.refundedSubtotal ?? 0), 0));
-    const refundedCommission = round2(
-      lines.reduce((sum, line) => {
-        const refundedSubtotal = Number(line.refundedSubtotal ?? 0);
-        if (!refundedSubtotal) return sum;
-        const share = Number(line.subtotal) > 0 ? refundedSubtotal / Number(line.subtotal) : 1;
-        return sum + Number(line.commission) * share;
-      }, 0),
-    );
+    // By default the store hands back its commission on refunded items along with the
+    // vendor's share. A store that keeps its commission leaves the vendor the whole refund.
+    const refundedCommission = refundKeepsCommission
+      ? 0
+      : round2(
+          lines.reduce((sum, line) => {
+            const refundedSubtotal = Number(line.refundedSubtotal ?? 0);
+            if (!refundedSubtotal) return sum;
+            const share = Number(line.subtotal) > 0 ? refundedSubtotal / Number(line.subtotal) : 1;
+            return sum + Number(line.commission) * share;
+          }, 0),
+        );
 
     // Shipping credited to this vendor comes back too: fully on a full refund, and up to
     // the leftover amount when the refund wasn't broken down by line.
@@ -408,6 +423,7 @@ export async function splitOrder(admin, shop, orderGid) {
       shipping: shipping.toFixed(2),
       earnings: round2(subtotal - commission + shipping).toFixed(2),
       refunded: refunded.toFixed(2),
+      refundKeepsCommission,
       refundedCommission: refundedCommission.toFixed(2),
       refundedEarnings: round2(refundedItems - refundedCommission + refundedShipping).toFixed(2),
       placedAt,
@@ -1076,7 +1092,9 @@ export function orderTimeline(vendorOrder, formatAmount) {
   add(
     vendorOrder.refundedAt,
     "Refunded",
-    `${formatAmount(vendorOrder.refunded)} back to the customer, ${formatAmount(vendorOrder.refundedCommission)} off your commission`,
+    Number(vendorOrder.refundedCommission) > 0
+      ? `${formatAmount(vendorOrder.refunded)} back to the customer, ${formatAmount(vendorOrder.refundedCommission)} off your commission`
+      : `${formatAmount(vendorOrder.refunded)} back to the customer; your commission stays`,
   );
   add(vendorOrder.cancelledAt, "Order cancelled", "The vendor owes nothing on it");
 
