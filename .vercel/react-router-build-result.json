@@ -23,6 +23,7 @@
       "routes/webhooks.compliance": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/api.cron.reconcile": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/api.portal.fulfill": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/api.portal.payouts": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/api.portal.return": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/webhooks.returns": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/api.order-split": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
@@ -166,6 +167,15 @@
         "parentId": "root",
         "file": "app/routes/api.portal.fulfill.jsx",
         "path": "api/portal/fulfill",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/api.portal.payouts": {
+        "id": "routes/api.portal.payouts",
+        "parentId": "root",
+        "file": "app/routes/api.portal.payouts.jsx",
+        "path": "api/portal/payouts",
         "config": {
           "runtime": "nodejs"
         }
@@ -479,6 +489,12 @@
         "file": "routes/api.portal.fulfill.jsx",
         "path": "api/portal/fulfill"
       },
+      "routes/api.portal.payouts": {
+        "id": "routes/api.portal.payouts",
+        "parentId": "root",
+        "file": "routes/api.portal.payouts.jsx",
+        "path": "api/portal/payouts"
+      },
       "routes/api.portal.return": {
         "id": "routes/api.portal.return",
         "parentId": "root",
@@ -702,6 +718,11 @@
             "id": "routes/api.portal.fulfill",
             "file": "routes/api.portal.fulfill.jsx",
             "path": "api/portal/fulfill"
+          },
+          {
+            "id": "routes/api.portal.payouts",
+            "file": "routes/api.portal.payouts.jsx",
+            "path": "api/portal/payouts"
           },
           {
             "id": "routes/api.portal.return",
