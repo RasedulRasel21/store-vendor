@@ -3,6 +3,9 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { getVendorOverview } from "../models/vendor.server";
 import { dismissSetupGuide, getShopSettings } from "../models/settings.server";
+import db from "../db.server";
+import { vendorBalances } from "../models/ledger.server";
+import { formatMoney } from "../utils/money";
 import { formatDate } from "../utils/vendor-display";
 
 export const loader = async ({ request }) => {
@@ -11,9 +14,20 @@ export const loader = async ({ request }) => {
     getVendorOverview(session.shop),
     getShopSettings(session.shop),
   ]);
+  const [balances, payoutsToSend, payoutRequests] = await Promise.all([
+    vendorBalances(session.shop, { holdDays: settings.payoutHoldDays }),
+    db.payout.count({ where: { shop: session.shop, status: "PENDING" } }),
+    db.payout.count({ where: { shop: session.shop, status: "REQUESTED" } }),
+  ]);
+  const availableToPay = [...balances.values()].reduce(
+    (sum, balance) => sum + Math.max(0, balance.available),
+    0,
+  );
 
   return {
     ...overview,
+    availableToPay: formatMoney(availableToPay, settings.currencyCode ?? "USD"),
+    payoutsToSend: payoutsToSend + payoutRequests,
     setupGuideDismissed: Boolean(settings.setupGuideDismissedAt),
     pending: overview.pending.map((vendor) => ({
       id: vendor.id,
@@ -45,6 +59,8 @@ export default function Index() {
     productsToReview,
     changesToReview,
     ordersToShip,
+    availableToPay,
+    payoutsToSend,
     setupGuideDismissed,
   } = useLoaderData();
   const fetcher = useFetcher();
@@ -101,6 +117,16 @@ export default function Index() {
       label: "Vendor orders to ship",
       value: ordersToShip,
       href: "/app/orders",
+    },
+    {
+      label: "Available to pay vendors",
+      value: availableToPay,
+      href: "/app/payouts",
+    },
+    {
+      label: "Payouts to send or accept",
+      value: payoutsToSend,
+      href: "/app/payouts",
     },
     {
       label: "Suspended",
