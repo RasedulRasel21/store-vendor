@@ -1,9 +1,11 @@
 import db from "../db.server";
 import { parseCommission } from "../utils/commission";
 
-const SHOP_CURRENCY = `#graphql
-  query ShopCurrency {
+const SHOP_BASICS = `#graphql
+  query ShopBasics {
     shop {
+      name
+      contactEmail
       currencyCode
       shopAddress {
         countryCodeV2
@@ -16,12 +18,14 @@ export function getShopSettings(shop) {
 }
 
 async function getShopBasics(admin) {
-  const response = await admin.graphql(SHOP_CURRENCY);
+  const response = await admin.graphql(SHOP_BASICS);
   const { data } = await response.json();
 
   return {
     currencyCode: data?.shop?.currencyCode ?? "USD",
     countryCode: data?.shop?.shopAddress?.countryCodeV2 ?? null,
+    shopName: data?.shop?.name ?? null,
+    shopEmail: data?.shop?.contactEmail ?? null,
   };
 }
 
@@ -30,15 +34,26 @@ export async function getShopCurrency(admin) {
   return currencyCode;
 }
 
-// Saves the shop's currency and country once: the portal shows prices in the currency, and
-// the country decides which carriers Shopify offers for tracking.
+// Saves what the app needs to know about the store, once: the portal shows prices in its
+// currency, the country decides which carriers Shopify offers for tracking, and vendor
+// emails go out under its name with replies going to its contact address.
 export async function ensureShopCurrency(admin, shop) {
   const settings = await getShopSettings(shop);
-  if (settings.currencyCode && settings.countryCode) return settings.currencyCode;
+  if (settings.currencyCode && settings.countryCode && settings.shopName && settings.shopEmail) {
+    return settings.currencyCode;
+  }
 
-  const { currencyCode, countryCode } = await getShopBasics(admin);
-  await db.shopSettings.update({ where: { shop }, data: { currencyCode, countryCode } });
-  return currencyCode;
+  const basics = await getShopBasics(admin);
+  await db.shopSettings.update({
+    where: { shop },
+    data: {
+      currencyCode: basics.currencyCode,
+      countryCode: basics.countryCode,
+      shopName: basics.shopName,
+      shopEmail: basics.shopEmail,
+    },
+  });
+  return basics.currencyCode;
 }
 
 // How long a vendor has to ship before the order is chased. Kept sane so a typo can't

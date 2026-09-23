@@ -1,17 +1,23 @@
 import db from "../db.server";
-import { decryptSecret, encryptionAvailable, encryptSecret } from "../utils/secrets";
 
-// Two providers that only need an API key and a verified sending address. Until one is
-// set up, every message is still written to the email log, so the notifications can be
-// built, tested and read now and start going out the moment a provider is connected.
-export const EMAIL_PROVIDERS = {
-  RESEND: { label: "Resend" },
-  POSTMARK: { label: "Postmark" },
-};
-
-// Stands in for the store's own address until a verified one is set, so messages in the
-// log show what the vendor would see.
-export const PLACEHOLDER_FROM = "StoreVendor <no-reply@example.com>";
+// StoreVendor sends every store's vendor emails through one account of ours, the way
+// Shopify apps normally do: merchants shouldn't have to hold an email provider account,
+// and most don't have one. Set once for the whole app:
+//
+//   EMAIL_PROVIDER  RESEND or POSTMARK
+//   EMAIL_API_KEY   that provider's key
+//   EMAIL_FROM      an address on our own verified domain
+//
+// Each message still goes out under the store's name, with replies going back to the
+// store, so vendors see who it's really from. Without those variables nothing is sent and
+// every message is kept in the email log instead, so nothing is lost.
+export function emailAccount() {
+  const provider = process.env.EMAIL_PROVIDER;
+  const apiKey = process.env.EMAIL_API_KEY;
+  const from = process.env.EMAIL_FROM;
+  if (!provider || !apiKey || !from) return null;
+  return { provider, apiKey, from };
+}
 
 const PROVIDERS = {
   RESEND: {
@@ -85,14 +91,22 @@ function toHtml(text) {
     .join("");
 }
 
-// Logs the message, then sends it if a provider is set up. Never throws: a notification
-// that can't go out must not break the thing that triggered it.
+// The store's name in front of our address, so a vendor sees who it's from while it's
+// still sent from a domain we've verified with the provider.
+function senderFor(shop, settings, account) {
+  const name = settings?.businessName || settings?.shopName || shop.replace(/\.myshopify\.com$/, "");
+  const address = account.from.match(/<([^>]+)>/)?.[1] ?? account.from;
+  return `${name.replace(/[<>"]/g, "")} <${address}>`;
+}
+
+// Logs the message, then sends it if the app has an email account. Never throws: a
+// notification that can't go out must not break the thing that triggered it.
 export async function sendEmail(shop, { to, subject, text, template, related }) {
   if (!to || !EMAIL.test(to)) return { skipped: "No valid address" };
 
   const settings = await db.shopSettings.findUnique({
     where: { shop },
-    select: { emailProvider: true, emailApiKey: true, emailFrom: true, emailReplyTo: true },
+    select: { businessName: true, shopName: true, shopEmail: true },
   });
   const message = await db.emailMessage.create({
     data: {
@@ -107,20 +121,21 @@ export async function sendEmail(shop, { to, subject, text, template, related }) 
     },
   });
 
-  const provider = PROVIDERS[settings?.emailProvider];
-  const apiKey = decryptSecret(settings?.emailApiKey);
-  if (!provider || !apiKey) {
+  const account = emailAccount();
+  const provider = PROVIDERS[account?.provider];
+  if (!account || !provider) {
     await db.emailMessage.update({
       where: { id: message.id },
-      data: { status: "SKIPPED", error: "No email provider set up; saved to the log only." },
+      data: { status: "SKIPPED", error: "Email isn't switched on for this app yet; saved to the log only." },
     });
     return { skipped: "No provider" };
   }
 
   try {
-    const result = await provider.send(apiKey, {
-      from: settings.emailFrom || PLACEHOLDER_FROM,
-      replyTo: settings.emailReplyTo || null,
+    const result = await provider.send(account.apiKey, {
+      from: senderFor(shop, settings, account),
+      // Vendors reply to the store, not to us.
+      replyTo: settings?.shopEmail || null,
       to,
       subject,
       text,
@@ -143,43 +158,24 @@ export async function sendEmail(shop, { to, subject, text, template, related }) 
   }
 }
 
-export async function connectEmail(shop, { provider, apiKey, from, replyTo }) {
-  const errors = {};
-  if (!PROVIDERS[provider]) errors.provider = "Choose a provider";
-  if (!apiKey?.trim()) errors.apiKey = "Paste the API key";
-  const fromAddress = from?.trim() ?? "";
-  // "Name <address>" or a bare address.
-  const address = fromAddress.match(/<([^>]+)>/)?.[1] ?? fromAddress;
-  if (!EMAIL.test(address)) errors.from = "Use an address on a domain you've verified with the provider";
-  if (replyTo?.trim() && !EMAIL.test(replyTo.trim())) errors.replyTo = "Use a valid email address";
-  if (Object.keys(errors).length) return { errors };
-  if (!encryptionAvailable()) {
-    return { error: "This store can't hold API keys yet: ENCRYPTION_KEY isn't set on the server." };
-  }
+// Checks our own key at startup or from a health check, so a bad key shows up here
+// rather than as a run of failed messages.
+export async function checkEmailAccount() {
+  const account = emailAccount();
+  if (!account) return { ok: false, error: "EMAIL_PROVIDER, EMAIL_API_KEY and EMAIL_FROM aren't set" };
 
-  let check;
+  const provider = PROVIDERS[account.provider];
+  if (!provider) return { ok: false, error: `EMAIL_PROVIDER must be one of ${Object.keys(PROVIDERS).join(", ")}` };
+
+  const address = account.from.match(/<([^>]+)>/)?.[1] ?? account.from;
+  if (!EMAIL.test(address)) return { ok: false, error: "EMAIL_FROM isn't a valid address" };
+
   try {
-    check = await PROVIDERS[provider].check(apiKey.trim());
+    return await provider.check(account.apiKey);
   } catch (error) {
     console.error("Email provider check failed", error);
-    return { error: "Couldn't reach the provider. Try again." };
+    return { ok: false, error: "Couldn't reach the email provider" };
   }
-  if (check.error) return { errors: { apiKey: check.error } };
-
-  const data = {
-    emailProvider: provider,
-    emailApiKey: encryptSecret(apiKey.trim()),
-    emailFrom: fromAddress,
-    emailReplyTo: replyTo?.trim() || null,
-  };
-  await db.shopSettings.upsert({ where: { shop }, update: data, create: { shop, ...data } });
-  return { ok: true };
-}
-
-export async function disconnectEmail(shop) {
-  const data = { emailProvider: null, emailApiKey: null, emailFrom: null, emailReplyTo: null };
-  await db.shopSettings.upsert({ where: { shop }, update: data, create: { shop } });
-  return { ok: true };
 }
 
 export function recentEmails(shop, take = 25) {

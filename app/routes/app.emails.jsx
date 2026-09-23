@@ -11,8 +11,8 @@ const STATUS = {
   SKIPPED: { label: "Logged only", tone: "neutral" },
 };
 
-// Every message the app sent or would have sent. Before a provider is connected this is
-// where they can be read, word for word.
+// Every message the app sent or would have sent, word for word, so the merchant can see
+// what a vendor was told and when.
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
   const emails = await recentEmails(session.shop, 50);

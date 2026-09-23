@@ -74,12 +74,10 @@ model ShopSettings {
   // Off: a refund hands back the store's commission on the refunded items too. On: the
   // store keeps its commission and the vendor carries the whole refund.
   refundKeepsCommission Boolean @default(false)
-  // Email: RESEND or POSTMARK, with the key encrypted. With none set, messages are still
-  // written to the email log, so nothing is lost and they can be read there.
-  emailProvider String?
-  emailApiKey   String?
-  emailFrom     String?
-  emailReplyTo  String?
+  // The store as vendors see it on emails: its name as the sender, and its contact address
+  // for replies. Both come from Shopify, so there's nothing for the merchant to set up.
+  shopName  String?
+  shopEmail String?
   // The store as the seller on commission invoices. Invoices show a clear placeholder for
   // anything not filled in, so they work before the real details are ready.
   businessName      String?
