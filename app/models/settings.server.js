@@ -101,7 +101,7 @@ export async function updateRestockLocation(shop, locationId, locations) {
 
 // The hold, the minimum and whether vendors can ask. Bounded so a typo can't release
 // money the day it's taken, or hold it for a year.
-export const PAYOUT_SCHEDULES = ["MANUAL", "WEEKLY", "MONTHLY"];
+export const PAYOUT_SCHEDULES = ["MANUAL", "DAILY", "WEEKLY", "MONTHLY"];
 
 export async function updatePayoutSettings(shop, { holdDays, minimum, requests, schedule, refundKeepsCommission }) {
   const days = Math.trunc(Number(holdDays));

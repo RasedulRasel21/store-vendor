@@ -443,9 +443,10 @@ export default function Settings() {
                 label="Set payouts aside"
                 name="schedule"
                 value={payouts.schedule}
-                details="Everyone due goes onto your To send list. You still send the money yourself."
+                details="Everyone due goes onto your To send list, and straight out if PayPal or Stripe is connected and set to send automatically. Checked once a night."
               >
                 <s-option value="MANUAL">When I click Pay</s-option>
+                <s-option value="DAILY">As soon as a vendor reaches the smallest payout</s-option>
                 <s-option value="WEEKLY">Every Monday</s-option>
                 <s-option value="MONTHLY">On the 1st of each month</s-option>
               </s-select>

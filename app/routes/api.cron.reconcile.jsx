@@ -31,6 +31,9 @@ function authorized(request) {
 // The job runs at 02:00 UTC, which is the start of the working day across South Asia
 // and still the day before in the Americas; payout days are counted in UTC either way.
 function isPayday(schedule, now = new Date()) {
+  // DAILY is the threshold setting: everyone whose available balance has reached the
+  // smallest payout gets paid on the next nightly run, without waiting for a set day.
+  if (schedule === "DAILY") return true;
   if (schedule === "WEEKLY") return now.getUTCDay() === 1;
   if (schedule === "MONTHLY") return now.getUTCDate() === 1;
   return false;
