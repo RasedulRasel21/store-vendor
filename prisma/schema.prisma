@@ -101,6 +101,14 @@ model ShopSettings {
   // like { "USD": "0.0082" }: the bank sets the real rate, so these only say how much to
   // send and are copied onto each payout. Fetched daily unless the merchant turns that off
   // and types their own. The base is remembered so rates can't outlive a currency change.
+  // The store's public "sell with us" page: its address, whether it's taking applications,
+  // and what it says. The handle is unique across every store, because the page is served
+  // from one address for all of them.
+  applyHandle   String?  @unique
+  applyOpen     Boolean  @default(true)
+  applyIntro    String?
+  applyTermsUrl String?
+
   // A pause on payouts for a while after a vendor's payout details change, so a change
   // nobody meant to make can be caught before money follows it.
   payoutChangeHoldEnabled Boolean @default(true)
@@ -677,6 +685,16 @@ model Vendor {
   statusReason String?
   notes        String?
   approvedAt   DateTime?
+
+  // What they said when they applied to sell, for a vendor who came in through the store's
+  // own application form rather than being added by the merchant:
+  // { contactName, website?, sells, catalogueSize?, message?, agreedTerms }.
+  // Kept after approval, so the merchant can look back at what was promised.
+  application   Json?
+  appliedAt     DateTime?
+  // A one-way fingerprint of the address it was sent from, so a flood of applications can
+  // be spotted and slowed without keeping anyone's IP address.
+  applicantHash String?
 
   // Null means the vendor uses the store's default commission.
   commissionPercent Decimal? @db.Decimal(5, 2)

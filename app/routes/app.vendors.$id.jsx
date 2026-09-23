@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useFetcher, useLoaderData } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -39,6 +39,7 @@ import {
   VENDOR_STATUS,
   VENDOR_USER_STATUS,
 } from "../utils/vendor-display";
+import { COUNTRY_NAMES } from "../utils/countries";
 
 const ACTOR = "merchant";
 
@@ -171,6 +172,27 @@ export const loader = async ({ request, params }) => {
           ]
         : [],
       taxUpdatedAt: formatDate(vendor.taxInfoUpdatedAt),
+      // What they said when they applied, for a vendor who came in through the store's own
+      // application page. Empty for one the merchant added.
+      application: vendor.application
+        ? {
+            appliedAt: formatDate(vendor.appliedAt),
+            rows: [
+              { label: "Contact", value: vendor.application.contactName },
+              { label: "Country", value: COUNTRY_NAMES[vendor.countryCode] ?? vendor.countryCode },
+              { label: "What they'd sell", value: vendor.application.sells },
+              ...(vendor.application.catalogueSize
+                ? [{ label: "Products", value: vendor.application.catalogueSize }]
+                : []),
+              ...(vendor.application.website
+                ? [{ label: "Website", value: vendor.application.website, link: true }]
+                : []),
+              ...(vendor.application.message
+                ? [{ label: "Anything else", value: vendor.application.message }]
+                : []),
+            ].filter((row) => row.value),
+          }
+        : null,
       pendingPayoutRequestId: vendor.changeRequests[0]?.id ?? null,
       address: [
         vendor.addressLine1,
@@ -499,6 +521,28 @@ export default function VendorDetail() {
           <s-text>{vendor.approvedAt ?? "Not approved"}</s-text>
         </s-grid>
       </s-section>
+
+      {vendor.application && (
+        <s-section heading="Their application">
+          <s-stack direction="block" gap="base">
+            <s-text color="subdued">{`Applied ${vendor.application.appliedAt}`}</s-text>
+            <s-grid gridTemplateColumns="auto 1fr" gap="base">
+              {vendor.application.rows.map((row) => (
+                <Fragment key={row.label}>
+                  <s-text color="subdued">{row.label}</s-text>
+                  {row.link ? (
+                    <s-link href={row.value} target="_blank">
+                      {row.value}
+                    </s-link>
+                  ) : (
+                    <s-text>{row.value}</s-text>
+                  )}
+                </Fragment>
+              ))}
+            </s-grid>
+          </s-stack>
+        </s-section>
+      )}
 
       <s-section heading="Payout details">
         <s-stack direction="block" gap="base">

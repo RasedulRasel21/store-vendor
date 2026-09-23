@@ -23,6 +23,7 @@ import {
   updateRestockLocation,
   updateTaxReporting,
 } from "../models/settings.server";
+import { applyUrl, ensureApplyHandle, updateApplicationSettings } from "../models/application.server";
 import { ratesAreStale, ratesMatchCurrency } from "../models/fx.server";
 import { SELLER_PLACEHOLDER } from "../models/invoice.server";
 import { connectPaypal, connectStripe, disconnectRail } from "../models/payout-rails.server";
@@ -44,6 +45,8 @@ function sampleRates(rates, shopCurrency) {
 
 export const loader = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
+  await getShopSettings(session.shop);
+  const applyHandle = await ensureApplyHandle(session.shop);
   const [settings, currencyCode, collections, carriers, choices, locations] = await Promise.all([
     getShopSettings(session.shop),
     getShopCurrency(admin),
@@ -127,6 +130,12 @@ export const loader = async ({ request }) => {
       prefix: settings.invoicePrefix,
       autoInvoices: settings.autoInvoices,
       placeholder: SELLER_PLACEHOLDER,
+    },
+    applications: {
+      url: applyUrl(applyHandle),
+      open: settings.applyOpen,
+      intro: settings.applyIntro ?? "",
+      termsUrl: settings.applyTermsUrl ?? "",
     },
     // Nothing to configure: this only shows the merchant how vendors will see their mail.
     email: {
@@ -258,6 +267,15 @@ export const action = async ({ request }) => {
     return { intent, errors: result.errors ?? null, saved: Boolean(result.saved) };
   }
 
+  if (intent === "applications") {
+    const result = await updateApplicationSettings(session.shop, {
+      open: formData.get("applyOpen") === "on",
+      intro: formData.get("applyIntro"),
+      termsUrl: formData.get("applyTermsUrl"),
+    });
+    return { intent, errors: result.errors ?? null, saved: Boolean(result.saved) };
+  }
+
   if (intent === "connectLabels") {
     const result = await connectLabelAccount(
       session.shop,
@@ -331,6 +349,7 @@ export default function Settings() {
     taxReporting,
     payoutFx,
     rails,
+    applications,
   } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
@@ -342,6 +361,7 @@ export default function Settings() {
   const fxErrors = errorsFor("payoutFx", "payoutFxMode");
   const taxErrors = errorsFor("taxReporting");
   const invoiceErrors = errorsFor("invoices");
+  const applicationErrors = errorsFor("applications");
   const submittingIntent =
     navigation.state === "submitting" ? navigation.formData?.get("intent") : null;
   const errors = actionData?.intent === "commission" ? (actionData.errors ?? {}) : {};
@@ -397,6 +417,63 @@ export default function Settings() {
                 variant="primary"
                 loading={submittingIntent === "commission"}
               >
+                Save
+              </s-button>
+            </s-stack>
+          </s-stack>
+        </Form>
+      </s-section>
+
+      <s-section heading="Vendors applying to sell">
+        <Form method="post">
+          <input type="hidden" name="intent" value="applications" />
+          <s-stack direction="block" gap="base">
+            <s-paragraph color="subdued">
+              Anyone can apply to sell in your store from this page. Applications arrive as
+              vendors awaiting your approval, and nobody can sign in until you approve them.
+              Link to it from your storefront, your social accounts, anywhere.
+            </s-paragraph>
+
+            {applications.url ? (
+              <s-box padding="base" background="subdued" borderRadius="base">
+                <s-stack direction="block" gap="small">
+                  <s-text color="subdued">Your application page</s-text>
+                  <s-link href={applications.url} target="_blank">
+                    {applications.url}
+                  </s-link>
+                </s-stack>
+              </s-box>
+            ) : (
+              <s-banner tone="warning">
+                The vendor portal address isn&apos;t set on the server yet, so there&apos;s no
+                application page to link to.
+              </s-banner>
+            )}
+
+            <s-text-area
+              label="What you tell people who are thinking of applying"
+              name="applyIntro"
+              rows={3}
+              defaultValue={applications.intro}
+              placeholder="We're looking for independent makers in Bangladesh. We take 10% of each sale and pay out weekly."
+              details="Shown at the top of the form. Leave blank for a plain one."
+            ></s-text-area>
+            <s-url-field
+              label="Link to your seller terms (optional)"
+              name="applyTermsUrl"
+              defaultValue={applications.termsUrl}
+              placeholder="https://yourstore.com/pages/seller-terms"
+              details="Applicants have to tick that they accept them before they can apply."
+              error={applicationErrors.termsUrl}
+            ></s-url-field>
+            <s-checkbox
+              label="Accept new applications"
+              name="applyOpen"
+              defaultChecked={applications.open}
+              details="Off: the page says you're not taking new vendors right now."
+            ></s-checkbox>
+            <s-stack direction="inline">
+              <s-button type="submit" loading={submittingIntent === "applications"}>
                 Save
               </s-button>
             </s-stack>

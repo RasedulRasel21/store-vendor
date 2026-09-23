@@ -26,6 +26,7 @@
       "routes/api.portal.payouts": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/api.portal.return": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/api.portal.stripe": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/api.portal.apply": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/webhooks.returns": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/api.order-split": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/api.portal.tax": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
@@ -200,6 +201,15 @@
         "parentId": "root",
         "file": "app/routes/api.portal.stripe.jsx",
         "path": "api/portal/stripe",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/api.portal.apply": {
+        "id": "routes/api.portal.apply",
+        "parentId": "root",
+        "file": "app/routes/api.portal.apply.jsx",
+        "path": "api/portal/apply",
         "config": {
           "runtime": "nodejs"
         }
@@ -567,6 +577,12 @@
         "file": "routes/api.portal.stripe.jsx",
         "path": "api/portal/stripe"
       },
+      "routes/api.portal.apply": {
+        "id": "routes/api.portal.apply",
+        "parentId": "root",
+        "file": "routes/api.portal.apply.jsx",
+        "path": "api/portal/apply"
+      },
       "routes/webhooks.returns": {
         "id": "routes/webhooks.returns",
         "parentId": "root",
@@ -829,6 +845,11 @@
             "id": "routes/api.portal.stripe",
             "file": "routes/api.portal.stripe.jsx",
             "path": "api/portal/stripe"
+          },
+          {
+            "id": "routes/api.portal.apply",
+            "file": "routes/api.portal.apply.jsx",
+            "path": "api/portal/apply"
           },
           {
             "id": "routes/webhooks.returns",
