@@ -338,14 +338,17 @@ export default function Settings() {
     payoutFx,
     rails,
   } = useLoaderData();
-  const railErrors = ["connectPaypal", "connectStripe"].includes(actionData?.intent) ? (actionData.errors ?? {}) : {};
-  const fxErrors = actionData?.intent === "payoutFx" ? (actionData.errors ?? {}) : {};
-  const taxErrors = actionData?.intent === "taxReporting" ? (actionData.errors ?? {}) : {};
-  const invoiceErrors = actionData?.intent === "invoices" ? (actionData.errors ?? {}) : {};
-  const emailErrors = actionData?.intent === "connectEmail" ? (actionData.errors ?? {}) : {};
   const actionData = useActionData();
   const navigation = useNavigation();
   const shopify = useAppBridge();
+  // Field errors belong to whichever form was submitted, so each section only reads its own.
+  const errorsFor = (...intents) =>
+    intents.includes(actionData?.intent) ? (actionData.errors ?? {}) : {};
+  const railErrors = errorsFor("connectPaypal", "connectStripe");
+  const fxErrors = errorsFor("payoutFx");
+  const taxErrors = errorsFor("taxReporting");
+  const invoiceErrors = errorsFor("invoices");
+  const emailErrors = errorsFor("connectEmail");
   const submittingIntent =
     navigation.state === "submitting" ? navigation.formData?.get("intent") : null;
   const errors = actionData?.intent === "commission" ? (actionData.errors ?? {}) : {};

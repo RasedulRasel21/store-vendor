@@ -77,6 +77,16 @@ module.exports = {
       ],
     },
 
+    // Our own app code. Reading a const declared further down throws only when the code
+    // runs, which for a route component means in production, so it's caught here instead.
+    // Hoisted functions are still fine, and generated type files are left alone.
+    {
+      files: ["app/**/*.{js,jsx}"],
+      rules: {
+        "no-use-before-define": ["error", { functions: false, classes: false, variables: true }],
+      },
+    },
+
     // Admin UI extensions: Preact, not React, so React's prop rules don't apply.
     {
       files: ["extensions/**/*.{js,jsx}"],
