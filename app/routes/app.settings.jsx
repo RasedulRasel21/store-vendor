@@ -133,6 +133,9 @@ export const loader = async ({ request }) => {
     },
     applications: {
       url: applyUrl(applyHandle),
+      // The same page on the merchant's own domain, inside their theme. Live only once the
+      // app has been deployed with its proxy.
+      storefrontUrl: settings.shopDomain ? `${settings.shopDomain.replace(/\/$/, "")}/apps/vendors/apply` : null,
       open: settings.applyOpen,
       intro: settings.applyIntro ?? "",
       termsUrl: settings.applyTermsUrl ?? "",
@@ -434,13 +437,32 @@ export default function Settings() {
               Link to it from your storefront, your social accounts, anywhere.
             </s-paragraph>
 
-            {applications.url ? (
+            {applications.storefrontUrl || applications.url ? (
               <s-box padding="base" background="subdued" borderRadius="base">
-                <s-stack direction="block" gap="small">
-                  <s-text color="subdued">Your application page</s-text>
-                  <s-link href={applications.url} target="_blank">
-                    {applications.url}
-                  </s-link>
+                <s-stack direction="block" gap="base">
+                  {applications.storefrontUrl && (
+                    <s-stack direction="block" gap="small">
+                      <s-text color="subdued">On your store, inside your theme</s-text>
+                      <s-link href={applications.storefrontUrl} target="_blank">
+                        {applications.storefrontUrl}
+                      </s-link>
+                      <s-text color="subdued">
+                        Link to this from your menu or footer. It works once the app has been
+                        deployed with its storefront pages.
+                      </s-text>
+                    </s-stack>
+                  )}
+                  {applications.url && (
+                    <s-stack direction="block" gap="small">
+                      <s-text color="subdued">A link you can share anywhere</s-text>
+                      <s-link href={applications.url} target="_blank">
+                        {applications.url}
+                      </s-link>
+                      <s-text color="subdued">
+                        The same form, away from your store. Handy for social media and messages.
+                      </s-text>
+                    </s-stack>
+                  )}
                 </s-stack>
               </s-box>
             ) : (

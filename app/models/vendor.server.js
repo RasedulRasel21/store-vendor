@@ -24,9 +24,13 @@ export function slugify(value) {
     .slice(0, 60);
 }
 
-async function uniqueHandle(shop, name) {
+// A vendor's handle is the last part of their page address on the storefront, so names
+// that the app already serves there can't be taken by a vendor.
+const RESERVED_HANDLES = new Set(["apply", "index", "assets", "search", "all"]);
+
+export async function uniqueHandle(shop, name) {
   const base = slugify(name) || "vendor";
-  let handle = base;
+  let handle = RESERVED_HANDLES.has(base) ? `${base}-store` : base;
   let suffix = 2;
 
   while (await db.vendor.findUnique({ where: { shop_handle: { shop, handle } } })) {

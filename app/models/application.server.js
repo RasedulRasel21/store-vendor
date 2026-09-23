@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import db from "../db.server";
-import { slugify } from "./vendor.server";
+import { slugify, uniqueHandle } from "./vendor.server";
 import { COUNTRY_NAMES } from "../utils/countries";
 
 // People applying to sell in a store. The form is public, so everything here assumes the
@@ -54,15 +54,16 @@ export function applyUrl(handle) {
   return handle && base ? `${base.replace(/\/$/, "")}/apply/${handle}` : null;
 }
 
-// What the public form needs to draw itself. Returns only what a stranger may see: never
-// the shop domain, never a setting.
-export async function publicForm(handle) {
-  const settings = await db.shopSettings.findUnique({
-    where: { applyHandle: String(handle ?? "").toLowerCase().slice(0, 80) },
-    select: { shop: true, shopName: true, applyOpen: true, applyIntro: true, applyTermsUrl: true },
-  });
-  if (!settings) return null;
+const FORM_FIELDS = {
+  shop: true,
+  shopName: true,
+  applyOpen: true,
+  applyIntro: true,
+  applyTermsUrl: true,
+};
 
+// Only what a stranger may see: never the shop domain, never a setting.
+function formFrom(settings) {
   return {
     storeName: settings.shopName || settings.shop.replace(/\.myshopify\.com$/, ""),
     open: settings.applyOpen,
@@ -70,6 +71,21 @@ export async function publicForm(handle) {
     termsUrl: settings.applyTermsUrl,
     catalogueSizes: CATALOGUE_SIZES,
   };
+}
+
+// The same page, found two ways: by its handle on the portal, and by the shop itself when
+// it's served from the merchant's own domain through the app proxy.
+export async function publicForm(handle) {
+  const settings = await db.shopSettings.findUnique({
+    where: { applyHandle: String(handle ?? "").toLowerCase().slice(0, 80) },
+    select: FORM_FIELDS,
+  });
+  return settings ? formFrom(settings) : null;
+}
+
+export async function formForShop(shop) {
+  const settings = await db.shopSettings.findUnique({ where: { shop }, select: FORM_FIELDS });
+  return settings ? formFrom(settings) : null;
 }
 
 const text = (value, max) => String(value ?? "").trim().slice(0, max);
@@ -114,22 +130,23 @@ function applicantHash(ip) {
   return crypto.createHmac("sha256", key).update(ip).digest("hex").slice(0, 32);
 }
 
-async function uniqueHandleFor(shop, name) {
-  const base = slugify(name) || "vendor";
-  let handle = base;
-  let suffix = 2;
-  while (await db.vendor.findUnique({ where: { shop_handle: { shop, handle } } })) {
-    handle = `${base}-${suffix}`;
-    suffix += 1;
-  }
-  return handle;
-}
-
-export async function submitApplication(handle, input, { ip, elapsedMs } = {}) {
+export async function submitApplication(handle, input, meta = {}) {
   const settings = await db.shopSettings.findUnique({
     where: { applyHandle: String(handle ?? "").toLowerCase().slice(0, 80) },
     select: { shop: true, applyOpen: true },
   });
+  return record(settings, input, meta);
+}
+
+export async function submitApplicationForShop(shop, input, meta = {}) {
+  const settings = await db.shopSettings.findUnique({
+    where: { shop },
+    select: { shop: true, applyOpen: true },
+  });
+  return record(settings, input, meta);
+}
+
+async function record(settings, input, { ip, elapsedMs } = {}) {
   if (!settings) return { error: "This store isn't taking applications." };
   if (!settings.applyOpen) return { closed: true, error: "This store isn't taking new vendors right now." };
 
@@ -172,7 +189,7 @@ export async function submitApplication(handle, input, { ip, elapsedMs } = {}) {
     data: {
       shop: settings.shop,
       name: values.name,
-      handle: await uniqueHandleFor(settings.shop, values.name),
+      handle: await uniqueHandle(settings.shop, values.name),
       email: values.email,
       phone: values.phone || null,
       countryCode: values.countryCode,

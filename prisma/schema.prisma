@@ -78,6 +78,8 @@ model ShopSettings {
   // for replies. Both come from Shopify, so there's nothing for the merchant to set up.
   shopName  String?
   shopEmail String?
+  // The storefront's own address, where the app's proxied pages are served from.
+  shopDomain String?
   // The store as the seller on commission invoices. Invoices show a clear placeholder for
   // anything not filled in, so they work before the real details are ready.
   businessName      String?

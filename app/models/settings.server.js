@@ -8,6 +8,9 @@ const SHOP_BASICS = `#graphql
       name
       contactEmail
       currencyCode
+      primaryDomain {
+        url
+      }
       shopAddress {
         countryCodeV2
       }
@@ -27,6 +30,8 @@ async function getShopBasics(admin) {
     countryCode: data?.shop?.shopAddress?.countryCodeV2 ?? null,
     shopName: data?.shop?.name ?? null,
     shopEmail: data?.shop?.contactEmail ?? null,
+    // Where customers actually are, which is where the app's own storefront pages live.
+    shopDomain: data?.shop?.primaryDomain?.url ?? null,
   };
 }
 
@@ -40,7 +45,13 @@ export async function getShopCurrency(admin) {
 // emails go out under its name with replies going to its contact address.
 export async function ensureShopCurrency(admin, shop) {
   const settings = await getShopSettings(shop);
-  if (settings.currencyCode && settings.countryCode && settings.shopName && settings.shopEmail) {
+  if (
+    settings.currencyCode &&
+    settings.countryCode &&
+    settings.shopName &&
+    settings.shopEmail &&
+    settings.shopDomain
+  ) {
     return settings.currencyCode;
   }
 
@@ -52,6 +63,7 @@ export async function ensureShopCurrency(admin, shop) {
       countryCode: basics.countryCode,
       shopName: basics.shopName,
       shopEmail: basics.shopEmail,
+      shopDomain: basics.shopDomain,
     },
   });
   return basics.currencyCode;

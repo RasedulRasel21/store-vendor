@@ -9,6 +9,14 @@ embedded = true
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
 scopes = "read_products,write_products,read_inventory,write_inventory,read_locations,read_orders,write_orders,read_fulfillments,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders,read_returns,write_returns,read_customers,read_metaobjects,write_metaobjects,read_metaobject_definitions,write_metaobject_definitions,read_files,write_files,read_shipping,write_shipping,read_payment_customizations,write_payment_customizations,read_delivery_customizations,write_delivery_customizations,read_publications,write_publications,read_markets"
 
+# Pages this app serves from the merchant's own domain, inside their own theme:
+# yourstore.com/apps/vendors is the vendor directory, /apps/vendors/apply is where people
+# apply to sell, and /apps/vendors/<handle> is one vendor's page.
+[app_proxy]
+url = "https://store-vendor.vercel.app/proxy"
+prefix = "apps"
+subpath = "vendors"
+
 [product.metafields.app.vendor_id]
 type = "single_line_text_field"
 name = "Vendor ID"

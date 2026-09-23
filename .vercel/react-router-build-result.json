@@ -30,6 +30,8 @@
       "routes/webhooks.returns": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/api.order-split": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/api.portal.tax": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/proxy._index": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/proxy.apply": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/auth.login": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/auth.$": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/_index": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
@@ -237,6 +239,25 @@
         "parentId": "root",
         "file": "app/routes/api.portal.tax.jsx",
         "path": "api/portal/tax",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/proxy._index": {
+        "id": "routes/proxy._index",
+        "parentId": "root",
+        "file": "app/routes/proxy._index.jsx",
+        "path": "proxy",
+        "index": true,
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/proxy.apply": {
+        "id": "routes/proxy.apply",
+        "parentId": "root",
+        "file": "app/routes/proxy.apply.jsx",
+        "path": "proxy/apply",
         "config": {
           "runtime": "nodejs"
         }
@@ -601,6 +622,19 @@
         "file": "routes/api.portal.tax.jsx",
         "path": "api/portal/tax"
       },
+      "routes/proxy._index": {
+        "id": "routes/proxy._index",
+        "parentId": "root",
+        "file": "routes/proxy._index.jsx",
+        "path": "proxy",
+        "index": true
+      },
+      "routes/proxy.apply": {
+        "id": "routes/proxy.apply",
+        "parentId": "root",
+        "file": "routes/proxy.apply.jsx",
+        "path": "proxy/apply"
+      },
       "routes/auth.login": {
         "id": "routes/auth.login",
         "parentId": "root",
@@ -865,6 +899,17 @@
             "id": "routes/api.portal.tax",
             "file": "routes/api.portal.tax.jsx",
             "path": "api/portal/tax"
+          },
+          {
+            "id": "routes/proxy._index",
+            "file": "routes/proxy._index.jsx",
+            "path": "proxy",
+            "index": true
+          },
+          {
+            "id": "routes/proxy.apply",
+            "file": "routes/proxy.apply.jsx",
+            "path": "proxy/apply"
           },
           {
             "id": "routes/auth.login",
