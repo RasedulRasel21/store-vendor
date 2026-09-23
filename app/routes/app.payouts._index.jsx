@@ -77,6 +77,7 @@ export const loader = async ({ request }) => {
       id: row.id,
       name: row.name,
       method: row.payoutMethod ? PAYOUT_METHOD[row.payoutMethod] : null,
+      pendingChangeId: row.changeRequests[0]?.id ?? null,
       pending: formatMoney(row.pending, currency),
       available: formatMoney(row.available, currency),
       canPay: Boolean(row.payoutMethod) && row.available > 0,
@@ -354,7 +355,16 @@ export default function Payouts() {
                   <s-table-cell>
                     <s-link href={`/app/vendors/${vendor.id}`}>{vendor.name}</s-link>
                   </s-table-cell>
-                  <s-table-cell>{vendor.method ?? "No payout details"}</s-table-cell>
+                  <s-table-cell>
+                    <s-stack direction="block">
+                      <s-text>{vendor.method ?? "No payout details"}</s-text>
+                      {vendor.pendingChangeId && (
+                        <s-link href={`/app/changes/${vendor.pendingChangeId}`}>
+                          Change waiting for you
+                        </s-link>
+                      )}
+                    </s-stack>
+                  </s-table-cell>
                   <s-table-cell>{vendor.pending}</s-table-cell>
                   <s-table-cell>
                     {vendor.owesUs ? (

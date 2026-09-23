@@ -264,7 +264,20 @@ export async function payoutOverview(shop) {
     db.vendor.findMany({
       where: { shop },
       orderBy: { name: "asc" },
-      select: { id: true, name: true, status: true, payoutMethod: true },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        payoutMethod: true,
+        // A payout change the merchant hasn't decided on yet: until they do, money would
+        // still go to the old details, so the page says so rather than "none".
+        changeRequests: {
+          where: { type: "PAYOUT", status: "PENDING" },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { id: true },
+        },
+      },
     }),
     db.payout.groupBy({ by: ["status"], where: { shop }, _count: { _all: true }, _sum: { amount: true } }),
   ]);
