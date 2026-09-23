@@ -38,6 +38,11 @@ async function logPayoutActivity(tx, vendorId, action, actor, details) {
 // rate for that currency they're paid in the shop currency, as before.
 export function convertForVendor(settings, wanted, amount, shopCurrency) {
   if (!settings?.payoutFxEnabled || !wanted || wanted === shopCurrency) return {};
+  // Rates fetched while the store was in another currency would convert from the wrong
+  // thing, so they're ignored until they're refreshed. The vendor is paid in the shop's
+  // currency meanwhile, which is wrong for them but never the wrong amount.
+  if (settings.payoutFxBase && settings.payoutFxBase !== shopCurrency) return {};
+
   const rate = Number(settings.payoutFxRates?.[wanted]);
   if (!(rate > 0)) return {};
 

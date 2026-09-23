@@ -1,5 +1,6 @@
 import db from "../db.server";
 import { parseCommission } from "../utils/commission";
+import { refreshRates } from "./fx.server";
 
 const SHOP_BASICS = `#graphql
   query ShopBasics {
@@ -207,17 +208,6 @@ export async function updateTaxReporting(shop, input) {
   return { saved: true };
 }
 
-// Stand-in rates so paying in other currencies can be tried before real ones are entered.
-// Clearly labelled in Settings, and only used once the merchant switches conversion on.
-const EXAMPLE_RATES = {
-  BDT: { USD: "0.0082", EUR: "0.0075", GBP: "0.0064", INR: "0.69", AED: "0.030" },
-  USD: { EUR: "0.92", GBP: "0.79", INR: "83.5", BDT: "122", CAD: "1.37" },
-};
-
-export function exampleRates(shopCurrency) {
-  return EXAMPLE_RATES[shopCurrency] ?? {};
-}
-
 export function ratesToText(rates) {
   return Object.entries(rates ?? {})
     .map(([code, rate]) => `${code} = ${rate}`)
@@ -242,7 +232,28 @@ export function parseRates(text) {
   return { rates, problems };
 }
 
-export async function updatePayoutFx(shop, { enabled, ratesText }) {
+// Two ways to hold rates: fetched daily for whatever currency the store is in, or typed by
+// hand for a merchant who'd rather use their bank's. Saving with automatic on fetches at
+// once, so switching it on is enough — there's nothing to fill in.
+export async function updatePayoutFx(shop, { enabled, auto, ratesText }) {
+  const settings = await getShopSettings(shop);
+
+  if (auto) {
+    const result = await refreshRates(shop, { base: settings.currencyCode ?? undefined });
+    if (result.error) {
+      // Rates already in hand still work, so this only blocks a store that has none.
+      const hasRates = Object.keys(settings.payoutFxRates ?? {}).length > 0;
+      if (enabled && !hasRates) {
+        return { errors: { rates: `Couldn't fetch rates: ${result.error}. Try again, or turn off automatic rates and enter them yourself.` } };
+      }
+    }
+    await db.shopSettings.update({
+      where: { shop },
+      data: { payoutFxEnabled: Boolean(enabled), payoutFxAuto: true },
+    });
+    return { saved: true, refreshed: result.error ? null : result, refreshError: result.error ?? null };
+  }
+
   const { rates, problems } = parseRates(ratesText);
   if (problems.length) {
     return { errors: { rates: `Couldn't read: ${problems.slice(0, 3).join(", ")}. Use one per line, like USD = 0.0082.` } };
@@ -251,8 +262,17 @@ export async function updatePayoutFx(shop, { enabled, ratesText }) {
     return { errors: { rates: "Add at least one rate before switching this on" } };
   }
 
-  const data = { payoutFxEnabled: Boolean(enabled), payoutFxRates: rates };
-  await db.shopSettings.upsert({ where: { shop }, update: data, create: { shop, ...data } });
+  await db.shopSettings.update({
+    where: { shop },
+    data: {
+      payoutFxEnabled: Boolean(enabled),
+      payoutFxAuto: false,
+      payoutFxRates: rates,
+      payoutFxRatesAt: new Date(),
+      payoutFxBase: settings.currencyCode ?? null,
+      payoutFxSource: "you",
+    },
+  });
   return { saved: true };
 }
 

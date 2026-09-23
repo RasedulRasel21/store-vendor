@@ -16,7 +16,6 @@ import {
   shopLocations,
   updateDefaultCommission,
   updateFulfillmentDays,
-  exampleRates,
   ratesToText,
   updateInvoiceSettings,
   updatePayoutFx,
@@ -24,13 +23,24 @@ import {
   updateRestockLocation,
   updateTaxReporting,
 } from "../models/settings.server";
+import { ratesAreStale, ratesMatchCurrency } from "../models/fx.server";
 import { SELLER_PLACEHOLDER } from "../models/invoice.server";
 import { connectPaypal, connectStripe, disconnectRail } from "../models/payout-rails.server";
 import { PAYPAL_CURRENCIES } from "../models/payout-rails/paypal.server";
 import db from "../db.server";
-import { formatDate } from "../utils/vendor-display";
+import { formatDate, formatDateTime } from "../utils/vendor-display";
 
 const ACTOR = "merchant";
+
+// A line of today's rates, so the merchant can see at a glance whether they look right
+// without reading 160 of them.
+function sampleRates(rates, shopCurrency) {
+  const shown = ["USD", "EUR", "GBP", "INR", "AED"]
+    .filter((code) => code !== shopCurrency && rates?.[code])
+    .slice(0, 3)
+    .map((code) => `${Number(rates[code]).toPrecision(4)} ${code}`);
+  return shown.length ? `Right now 1 ${shopCurrency} buys ${shown.join(", ")}.` : "";
+}
 
 export const loader = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
@@ -83,11 +93,22 @@ export const loader = async ({ request }) => {
     },
     payoutFx: {
       enabled: settings.payoutFxEnabled,
-      // Nothing saved yet: offer the example rates, which the form labels as examples.
-      rates: settings.payoutFxRates
-        ? ratesToText(settings.payoutFxRates)
-        : ratesToText(exampleRates(settings.currencyCode ?? currencyCode)),
-      examples: !settings.payoutFxRates,
+      auto: settings.payoutFxAuto,
+      rates: ratesToText(settings.payoutFxRates),
+      count: Object.keys(settings.payoutFxRates ?? {}).length,
+      // "155 currencies · 23 Sep 2026, 00:02 · exchangerate-api.com", skipping whichever
+      // parts a store that's had rates typed in by hand doesn't have.
+      status: [
+        `${Object.keys(settings.payoutFxRates ?? {}).length} currencies`,
+        settings.payoutFxRatesAt ? formatDateTime(settings.payoutFxRatesAt) : "not updated yet",
+        settings.payoutFxSource && settings.payoutFxSource !== "you" ? settings.payoutFxSource : null,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      base: settings.payoutFxBase,
+      stale: ratesAreStale(settings),
+      currencyChanged: !ratesMatchCurrency(settings, settings.currencyCode ?? currencyCode),
+      sample: sampleRates(settings.payoutFxRates, settings.currencyCode ?? currencyCode),
     },
     taxReporting: {
       us1099kAmount: String(settings.us1099kAmount),
@@ -195,12 +216,19 @@ export const action = async ({ request }) => {
     return { intent, error: null, saved: true };
   }
 
-  if (intent === "payoutFx") {
+  // The same save either way; the second form only flips between daily rates and your own.
+  if (intent === "payoutFx" || intent === "payoutFxMode") {
     const result = await updatePayoutFx(session.shop, {
       enabled: formData.get("enabled") === "on",
+      auto: formData.get("auto") === "on",
       ratesText: formData.get("rates"),
     });
-    return { intent, errors: result.errors ?? null, saved: Boolean(result.saved) };
+    return {
+      intent,
+      errors: result.errors ?? null,
+      saved: Boolean(result.saved),
+      refreshError: result.refreshError ?? null,
+    };
   }
 
   if (intent === "taxReporting") {
@@ -307,7 +335,7 @@ export default function Settings() {
   const errorsFor = (...intents) =>
     intents.includes(actionData?.intent) ? (actionData.errors ?? {}) : {};
   const railErrors = errorsFor("connectPaypal", "connectStripe");
-  const fxErrors = errorsFor("payoutFx");
+  const fxErrors = errorsFor("payoutFx", "payoutFxMode");
   const taxErrors = errorsFor("taxReporting");
   const invoiceErrors = errorsFor("invoices");
   const submittingIntent =
@@ -656,39 +684,86 @@ export default function Settings() {
       </s-section>
 
       <s-section heading="Paying vendors in other currencies">
-        <Form method="post">
-          <input type="hidden" name="intent" value="payoutFx" />
-          <s-stack direction="block" gap="base">
-            <s-paragraph color="subdued">
-              {`Vendors can ask to be paid in their own currency. What they're owed stays in ${currencyCode}; each payout is converted at your rate when it's set aside, and the rate is kept on the payout. Your bank's rate on the day is what actually counts, so keep these close to it.`}
-            </s-paragraph>
-            {payoutFx.examples && (
-              <s-banner tone="warning">
-                These are example rates, not today&apos;s. Replace them before switching conversion on.
-              </s-banner>
-            )}
-            <s-text-area
-              label={`Rates for 1 ${currencyCode}`}
-              name="rates"
-              rows={5}
-              defaultValue={payoutFx.rates}
-              placeholder="USD = 0.0082"
-              details="One per line: a currency code, then how much of it one unit of your currency buys."
-              error={fxErrors.rates}
-            ></s-text-area>
-            <s-checkbox
-              label="Convert payouts for vendors who asked for another currency"
-              name="enabled"
-              defaultChecked={payoutFx.enabled}
-              details="Off: everyone is paid in your currency, whatever they asked for."
-            ></s-checkbox>
+        <s-stack direction="block" gap="base">
+          <s-paragraph color="subdued">
+            {`Vendors can ask to be paid in their own currency. What they're owed stays in ${currencyCode}; each payout is converted when it's set aside, and the rate used is kept on the payout. Your bank's rate on the day is what actually counts.`}
+          </s-paragraph>
+
+          {["payoutFx", "payoutFxMode"].includes(actionData?.intent) && actionData.refreshError && (
+            <s-banner tone="warning">
+              {`Rates couldn't be updated: ${actionData.refreshError}. The ones already saved are still being used.`}
+            </s-banner>
+          )}
+          {payoutFx.currencyChanged && (
+            <s-banner tone="warning">
+              {`These rates were fetched for ${payoutFx.base}, but the store is now in ${currencyCode}. Update them before converting any more payouts.`}
+            </s-banner>
+          )}
+          {payoutFx.stale && !payoutFx.currencyChanged && (
+            <s-banner tone="warning">
+              {payoutFx.auto
+                ? "Rates haven't updated in the last couple of days. Update them now, or check back later."
+                : "These rates are a few days old. Check them against your bank's."}
+            </s-banner>
+          )}
+
+          <Form method="post">
+            <input type="hidden" name="intent" value="payoutFx" />
+            <input type="hidden" name="auto" value={payoutFx.auto ? "on" : "off"} />
+            <s-stack direction="block" gap="base">
+              <s-checkbox
+                label="Convert payouts for vendors who asked for another currency"
+                name="enabled"
+                defaultChecked={payoutFx.enabled}
+                details="Off: everyone is paid in your currency, whatever they asked for."
+              ></s-checkbox>
+
+              {payoutFx.auto ? (
+                <s-box padding="base" background="subdued" borderRadius="base">
+                  <s-stack direction="block" gap="small">
+                    <s-stack direction="inline" gap="small" alignItems="center">
+                      <s-badge tone={payoutFx.stale ? "warning" : "success"}>Updated daily</s-badge>
+                      <s-text color="subdued">
+                        {payoutFx.count ? payoutFx.status : "No rates yet — save to fetch today's."}
+                      </s-text>
+                    </s-stack>
+                    <s-paragraph color="subdued">
+                      {`Today's rates for 1 ${currencyCode} are fetched for you, so a vendor can ask for any currency and be paid in it. ${payoutFx.sample || ""}`}
+                    </s-paragraph>
+                  </s-stack>
+                </s-box>
+              ) : (
+                <s-text-area
+                  label={`Rates for 1 ${currencyCode}`}
+                  name="rates"
+                  rows={5}
+                  defaultValue={payoutFx.rates}
+                  placeholder="USD = 0.0082"
+                  details="One per line: a currency code, then how much of it one unit of your currency buys."
+                  error={fxErrors.rates}
+                ></s-text-area>
+              )}
+
+              <s-stack direction="inline" gap="base">
+                <s-button type="submit" loading={submittingIntent === "payoutFx"}>
+                  {payoutFx.auto && payoutFx.count ? "Save and update rates" : "Save"}
+                </s-button>
+              </s-stack>
+            </s-stack>
+          </Form>
+
+          <Form method="post">
+            <input type="hidden" name="intent" value="payoutFxMode" />
+            <input type="hidden" name="enabled" value={payoutFx.enabled ? "on" : "off"} />
+            <input type="hidden" name="auto" value={payoutFx.auto ? "off" : "on"} />
+            <input type="hidden" name="rates" value={payoutFx.rates} />
             <s-stack direction="inline">
-              <s-button type="submit" loading={submittingIntent === "payoutFx"}>
-                Save
+              <s-button type="submit" variant="tertiary" loading={submittingIntent === "payoutFxMode"}>
+                {payoutFx.auto ? "Set the rates myself instead" : "Go back to daily rates"}
               </s-button>
             </s-stack>
-          </s-stack>
-        </Form>
+          </Form>
+        </s-stack>
       </s-section>
 
       <s-section heading="Commission invoices">

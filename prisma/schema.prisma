@@ -97,11 +97,16 @@ model ShopSettings {
   us1099kTransactions Int     @default(200)
   dac7MinTransactions Int     @default(30)
   dac7MinAmount       Decimal @default(2000) @db.Decimal(12, 2)
-  // Paying vendors in their own currency. Rates are the merchant's, per one unit of the
-  // shop currency, like { "USD": "0.0082" }: the bank sets the real rate, so these only
-  // say how much to send and are copied onto each payout.
-  payoutFxEnabled Boolean @default(false)
+  // Paying vendors in their own currency. Rates are per one unit of the shop currency,
+  // like { "USD": "0.0082" }: the bank sets the real rate, so these only say how much to
+  // send and are copied onto each payout. Fetched daily unless the merchant turns that off
+  // and types their own. The base is remembered so rates can't outlive a currency change.
+  payoutFxEnabled Boolean   @default(false)
+  payoutFxAuto    Boolean   @default(true)
   payoutFxRates   Json?
+  payoutFxRatesAt DateTime?
+  payoutFxBase    String?
+  payoutFxSource  String?
   // Automatic payout rails, sending from the merchant's own accounts. Credentials are
   // encrypted; the *Account fields are only labels for Settings.
   paypalMode        String?
