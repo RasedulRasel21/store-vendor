@@ -218,15 +218,21 @@ async function vendorWithStripe(vendorId) {
   return { vendor, key };
 }
 
+// Also says whether PayPal is connected, so the portal can tell a vendor whether their
+// payouts go out automatically or are sent by hand.
 export async function stripeVendorStatus(vendorId) {
   const { vendor, key, error } = await vendorWithStripe(vendorId);
   if (error) return { error };
-  if (!key) return { available: false };
-  if (!vendor.stripeAccountId) return { available: true, accountId: null };
+
+  const rails = await connectedRails(vendor.shop);
+  const paypal = rails.paypal;
+
+  if (!key) return { available: false, paypal };
+  if (!vendor.stripeAccountId) return { available: true, paypal, accountId: null };
 
   const status = await vendorAccountStatus(key, vendor.stripeAccountId);
-  if (status.error) return { available: true, accountId: vendor.stripeAccountId, error: status.error };
-  return { available: true, accountId: vendor.stripeAccountId, ...status };
+  if (status.error) return { available: true, paypal, accountId: vendor.stripeAccountId, error: status.error };
+  return { available: true, paypal, accountId: vendor.stripeAccountId, ...status };
 }
 
 export async function stripeOnboarding(vendorId, { returnUrl, refreshUrl }) {
