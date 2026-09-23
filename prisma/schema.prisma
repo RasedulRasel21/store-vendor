@@ -708,6 +708,14 @@ model Vendor {
   // Null means no maximum order value for cash on delivery.
   codMaxOrderValue Decimal?     @db.Decimal(12, 2)
 
+  // How the vendor appears to customers on their own page in the store. Vendors write
+  // these in the portal; they're plain text, never markup, and are escaped where shown.
+  logoUrl        String?
+  bannerUrl      String?
+  bio            String?
+  returnPolicy   String?
+  shippingPolicy String?
+
   // Pickup and return address. Vendors edit it in the portal.
   addressLine1 String?
   addressLine2 String?
