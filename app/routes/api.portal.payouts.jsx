@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import db from "../db.server";
 import { holdLabel, holdOf, vendorBalance } from "../models/ledger.server";
-import { payoutMinimum } from "../models/payout.server";
+import { payoutChangeHoldUntil, payoutMinimum } from "../models/payout.server";
 import { getShopSettings } from "../models/settings.server";
 
 // The vendor portal shows balances and lets vendors ask to be paid. The balance rules live
@@ -28,9 +28,13 @@ async function summary(vendor) {
     }),
   ]);
   const minimum = payoutMinimum(settings);
+  // Paused after the vendor's own payout details changed, so money can't follow a change
+  // they didn't make before they've had a chance to see it.
+  const heldUntil = payoutChangeHoldUntil(settings, vendor);
 
   return {
     ...balance,
+    payoutChangeHold: heldUntil ? heldUntil.toISOString() : null,
     currencyCode: settings.currencyCode ?? "USD",
     // A phrase like "7 days" or "1 month", so the portal doesn't have to word it itself.
     hold: holdLabel(holdOf(settings)),
@@ -42,6 +46,7 @@ async function summary(vendor) {
       settings.payoutRequests &&
       Boolean(vendor.payoutMethod) &&
       !openRequest &&
+      !heldUntil &&
       balance.available > 0 &&
       balance.available >= minimum,
   };
@@ -62,7 +67,7 @@ export const action = async ({ request }) => {
 
   const vendor = await db.vendor.findUnique({
     where: { id: vendorId },
-    select: { id: true, shop: true, status: true, payoutMethod: true },
+    select: { id: true, shop: true, status: true, payoutMethod: true, payoutUpdatedAt: true },
   });
   if (!vendor || vendor.status !== "ACTIVE") {
     return Response.json({ error: "Vendor not found" }, { status: 404 });
@@ -75,6 +80,12 @@ export const action = async ({ request }) => {
     if (!current.requestsAllowed) return Response.json({ error: "The store pays on its own schedule." }, { status: 400 });
     if (!current.hasPayoutDetails) return Response.json({ error: "Add your payout details first." }, { status: 400 });
     if (current.openPayout) return Response.json({ error: "You already have a payout on its way." }, { status: 400 });
+    if (current.payoutChangeHold) {
+      return Response.json(
+        { error: "Your payout details changed recently, so payouts are paused for a short while. If that wasn't you, tell the store now." },
+        { status: 400 },
+      );
+    }
     if (!current.canRequest) {
       return Response.json(
         { error: `Payouts start at ${current.minimum.toFixed(2)} ${current.currencyCode}.` },

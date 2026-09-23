@@ -79,6 +79,8 @@ export const loader = async ({ request }) => {
       holdUnit: settings.payoutHoldUnit,
       minimum: String(settings.payoutMinimum),
       minimumEnabled: settings.payoutMinimumEnabled,
+      changeHoldEnabled: settings.payoutChangeHoldEnabled,
+      changeHoldHours: String(settings.payoutChangeHoldHours),
       requests: settings.payoutRequests,
       schedule: settings.payoutSchedule,
       refundKeepsCommission: settings.refundKeepsCommission,
@@ -184,6 +186,8 @@ export const action = async ({ request }) => {
       requests: formData.get("requests") === "on",
       schedule: String(formData.get("schedule") ?? ""),
       refundKeepsCommission: formData.get("refundKeepsCommission") === "on",
+      changeHoldEnabled: formData.get("changeHoldEnabled") === "on",
+      changeHoldHours: formData.get("changeHoldHours"),
     });
     return { intent, errors: result.errors ?? null, saved: Boolean(result.saved) };
   }
@@ -446,6 +450,25 @@ export default function Settings() {
               name="minimumEnabled"
               defaultChecked={payouts.minimumEnabled}
               details="Off: any balance can be paid out, however small."
+            ></s-checkbox>
+            <s-grid gridTemplateColumns="minmax(0,20rem)" gap="base">
+              <s-number-field
+                label="Pause payouts after payout details change"
+                name="changeHoldHours"
+                suffix="hours"
+                inputMode="numeric"
+                min={1}
+                max={720}
+                defaultValue={payouts.changeHoldHours}
+                details="If someone else changed where a vendor's money goes, this is the window to notice before any of it is sent."
+                error={actionData?.intent === "payouts" ? actionData.errors?.changeHoldHours : undefined}
+              ></s-number-field>
+            </s-grid>
+            <s-checkbox
+              label="Pause payouts for a while after you approve a payout change"
+              name="changeHoldEnabled"
+              defaultChecked={payouts.changeHoldEnabled}
+              details="Off: a vendor can be paid to new details the moment you approve them."
             ></s-checkbox>
             <s-grid gridTemplateColumns="minmax(0,20rem)" gap="base">
               <s-select

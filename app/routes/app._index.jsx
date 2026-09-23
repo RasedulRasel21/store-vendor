@@ -6,7 +6,13 @@ import { dismissSetupGuide, getShopSettings } from "../models/settings.server";
 import db from "../db.server";
 import { holdOf, vendorBalances } from "../models/ledger.server";
 import { formatMoney } from "../utils/money";
+import { OVERDUE_WHERE } from "../models/vendor-order.server";
 import { formatDate } from "../utils/vendor-display";
+
+// How far back a problem still counts as something to act on today. Worked out per
+// request: a server that stays up for a week would otherwise keep asking about the same
+// fortnight it booted in.
+const recently = () => new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
 
 export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
@@ -14,18 +20,41 @@ export const loader = async ({ request }) => {
     getVendorOverview(session.shop),
     getShopSettings(session.shop),
   ]);
-  const [balances, payoutsToSend, payoutRequests] = await Promise.all([
-    vendorBalances(session.shop, { hold: holdOf(settings) }),
-    db.payout.count({ where: { shop: session.shop, status: "PENDING" } }),
-    db.payout.count({ where: { shop: session.shop, status: "REQUESTED" } }),
-  ]);
+  const [balances, payoutsToSend, payoutRequests, bounced, overdueOrders, unpayable] =
+    await Promise.all([
+      vendorBalances(session.shop, { hold: holdOf(settings) }),
+      db.payout.count({ where: { shop: session.shop, status: "PENDING" } }),
+      db.payout.count({ where: { shop: session.shop, status: "REQUESTED" } }),
+      // A transfer that bounced put the money back on the vendor's balance, so it needs
+      // sending again. Only recent ones: an old failure has long since been dealt with.
+      db.payout.count({
+        where: { shop: session.shop, status: "FAILED", updatedAt: { gte: recently() } },
+      }),
+      db.vendorOrder.count({
+        where: { shop: session.shop, ...OVERDUE_WHERE(settings.fulfillmentDays) },
+      }),
+      db.vendor.findMany({
+        where: { shop: session.shop, status: "ACTIVE", payoutMethod: null },
+        select: { id: true },
+      }),
+    ]);
   const availableToPay = [...balances.values()].reduce(
     (sum, balance) => sum + Math.max(0, balance.available),
     0,
   );
+  // Vendors who have earned something but have nowhere for it to go.
+  const waitingOnDetails = unpayable.filter(
+    (vendor) => (balances.get(vendor.id)?.available ?? 0) > 0,
+  ).length;
 
   return {
     ...overview,
+    alerts: {
+      bounced,
+      overdueOrders,
+      waitingOnDetails,
+      fulfillmentDays: settings.fulfillmentDays,
+    },
     availableToPay: formatMoney(availableToPay, settings.currencyCode ?? "USD"),
     payoutsToSend: payoutsToSend + payoutRequests,
     setupGuideDismissed: Boolean(settings.setupGuideDismissedAt),
@@ -62,7 +91,43 @@ export default function Index() {
     availableToPay,
     payoutsToSend,
     setupGuideDismissed,
+    alerts,
   } = useLoaderData();
+
+  // Only things that are wrong now and can be acted on, worst first. Nothing wrong, no
+  // section: a panel that's always there stops being read.
+  const problems = [
+    alerts.bounced && {
+      id: "bounced",
+      tone: "critical",
+      text:
+        alerts.bounced === 1
+          ? "A payout bounced. That money is owed again and needs sending."
+          : `${alerts.bounced} payouts bounced. That money is owed again and needs sending.`,
+      action: "Open payouts",
+      href: "/app/payouts?tab=closed",
+    },
+    alerts.waitingOnDetails && {
+      id: "details",
+      tone: "warning",
+      text:
+        alerts.waitingOnDetails === 1
+          ? "A vendor has earned money but hasn't added payout details, so there's nowhere to send it."
+          : `${alerts.waitingOnDetails} vendors have earned money but haven't added payout details.`,
+      action: "See who",
+      href: "/app/payouts",
+    },
+    alerts.overdueOrders && {
+      id: "overdue",
+      tone: "warning",
+      text:
+        alerts.overdueOrders === 1
+          ? `An order hasn't shipped within ${alerts.fulfillmentDays} days.`
+          : `${alerts.overdueOrders} orders haven't shipped within ${alerts.fulfillmentDays} days.`,
+      action: "Chase them",
+      href: "/app/orders?overdue=1",
+    },
+  ].filter(Boolean);
   const fetcher = useFetcher();
   // Hide the guide as soon as the merchant dismisses it.
   const dismissing = fetcher.formData?.get("intent") === "dismiss-setup-guide";
@@ -141,6 +206,29 @@ export default function Index() {
       <s-button slot="primary-action" variant="primary" href="/app/vendors/new">
         Add vendor
       </s-button>
+
+      {problems.length > 0 && (
+        <s-section heading="Needs your attention">
+          <s-stack direction="block" gap="base">
+            {problems.map((problem) => (
+              <s-grid
+                key={problem.id}
+                gridTemplateColumns="auto 1fr auto"
+                gap="base"
+                alignItems="center"
+              >
+                <s-badge tone={problem.tone}>
+                  {problem.tone === "critical" ? "Action needed" : "Check"}
+                </s-badge>
+                <s-text>{problem.text}</s-text>
+                <s-button variant="secondary" href={problem.href}>
+                  {problem.action}
+                </s-button>
+              </s-grid>
+            ))}
+          </s-stack>
+        </s-section>
+      )}
 
       {completedSteps < steps.length && !setupGuideDismissed && !dismissing && (
         <s-section heading="Set up your marketplace">

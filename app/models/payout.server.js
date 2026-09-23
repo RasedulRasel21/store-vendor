@@ -29,6 +29,34 @@ export function payoutMinimum(settings) {
   return settings?.payoutMinimumEnabled ? round2(settings.payoutMinimum ?? 0) : 0;
 }
 
+const HOUR = 60 * 60 * 1000;
+
+// When a vendor's newly approved payout details can be paid to. The point of the pause is
+// that if someone else changed where the money goes, there's a window to notice before any
+// of it is sent. Returns null when nothing is on hold.
+export function payoutChangeHoldUntil(settings, vendor) {
+  if (!settings?.payoutChangeHoldEnabled || !vendor?.payoutUpdatedAt) return null;
+
+  const hours = Math.max(0, settings.payoutChangeHoldHours ?? 48);
+  if (!hours) return null;
+
+  const until = new Date(new Date(vendor.payoutUpdatedAt).getTime() + hours * HOUR);
+  return until.getTime() > Date.now() ? until : null;
+}
+
+// Said the same way wherever a payout is stopped, so the merchant reads one explanation
+// rather than three.
+export function holdReason(vendor, until) {
+  const when = until.toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "UTC",
+  });
+  return `${vendor.name} changed their payout details recently, so payouts are paused until ${when} UTC.`;
+}
+
 async function logPayoutActivity(tx, vendorId, action, actor, details) {
   await tx.vendorActivity.create({ data: { vendorId, action, actor, details } });
 }
@@ -62,13 +90,16 @@ async function setAside(tx, { shop, vendorId, amount, actor, payoutId, note }) {
     tx.shopSettings.findUnique({ where: { shop } }),
     tx.vendor.findFirst({
       where: { id: vendorId, shop },
-      select: { id: true, name: true, payoutMethod: true, payoutDetails: true },
+      select: { id: true, name: true, payoutMethod: true, payoutDetails: true, payoutUpdatedAt: true },
     }),
   ]);
   if (!vendor) return { error: "Vendor not found" };
   if (!vendor.payoutMethod) {
     return { error: `${vendor.name} hasn't added payout details yet, so there's nowhere to send it.` };
   }
+
+  const heldUntil = payoutChangeHoldUntil(settings, vendor);
+  if (heldUntil) return { error: holdReason(vendor, heldUntil), heldUntil };
 
   // Read inside the lock, through the same connection, so it reflects anything just set aside.
   const balance = await vendorBalance(shop, vendorId, holdOf(settings), tx);
@@ -280,6 +311,7 @@ export async function payoutOverview(shop) {
         name: true,
         status: true,
         payoutMethod: true,
+        payoutUpdatedAt: true,
         // A payout change the merchant hasn't decided on yet: until they do, money would
         // still go to the old details, so the page says so rather than "none".
         changeRequests: {
@@ -296,6 +328,7 @@ export async function payoutOverview(shop) {
   const rows = vendors
     .map((vendor) => ({
       ...vendor,
+      heldUntil: payoutChangeHoldUntil(settings, vendor),
       ...(balances.get(vendor.id) ?? { pending: 0, available: 0, inFlight: 0, paid: 0 }),
     }))
     .filter((row) => row.pending || row.available || row.inFlight || row.paid);

@@ -133,10 +133,16 @@ export async function updatePayoutSettings(shop, {
   requests,
   schedule,
   refundKeepsCommission,
+  changeHoldEnabled,
+  changeHoldHours,
 }) {
   const value = Math.trunc(Number(holdValue));
   const floor = Number(minimum);
+  const changeHold = Math.trunc(Number(changeHoldHours));
   const errors = {};
+  if (changeHoldEnabled && (!Number.isFinite(changeHold) || changeHold < 1 || changeHold > 720)) {
+    errors.changeHoldHours = "Choose between 1 and 720 hours";
+  }
   if (!HOLD_UNITS.includes(holdUnit)) errors.holdUnit = "Choose days, weeks or months";
   else if (!Number.isFinite(value) || value < 0 || value > HOLD_LIMIT[holdUnit]) {
     errors.holdValue = `Choose between 0 and ${HOLD_LIMIT[holdUnit]}`;
@@ -154,6 +160,8 @@ export async function updatePayoutSettings(shop, {
     payoutMinimum: floor.toFixed(2),
     payoutRequests: Boolean(requests),
     payoutSchedule: schedule,
+    payoutChangeHoldEnabled: Boolean(changeHoldEnabled),
+    ...(Number.isFinite(changeHold) && changeHold >= 1 ? { payoutChangeHoldHours: changeHold } : {}),
     // Only orders placed from now on follow a change; older ones keep the rule they had.
     refundKeepsCommission: Boolean(refundKeepsCommission),
   };

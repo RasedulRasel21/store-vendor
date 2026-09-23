@@ -24,7 +24,7 @@ import {
 } from "../models/payout-rails.server";
 import { formatMoney } from "../utils/money";
 import { accountLabel, maskAccount, PAYOUT_METHOD } from "../utils/payout";
-import { formatDate } from "../utils/vendor-display";
+import { formatDate, formatDateTime } from "../utils/vendor-display";
 
 const ACTOR = "merchant";
 
@@ -79,9 +79,11 @@ export const loader = async ({ request }) => {
       name: row.name,
       method: row.payoutMethod ? PAYOUT_METHOD[row.payoutMethod] : null,
       pendingChangeId: row.changeRequests[0]?.id ?? null,
+      // Paused because their payout details changed in the last day or two.
+      heldUntil: row.heldUntil ? formatDateTime(row.heldUntil) : null,
       pending: formatMoney(row.pending, currency),
       available: formatMoney(row.available, currency),
-      canPay: Boolean(row.payoutMethod) && row.available > 0,
+      canPay: Boolean(row.payoutMethod) && row.available > 0 && !row.heldUntil,
       owesUs: row.available < 0,
     })),
     payouts: payouts.map((payout) => ({
@@ -363,6 +365,9 @@ export default function Payouts() {
                         <s-link href={`/app/changes/${vendor.pendingChangeId}`}>
                           Change waiting for you
                         </s-link>
+                      )}
+                      {vendor.heldUntil && (
+                        <s-badge tone="warning">{`Paused until ${vendor.heldUntil}`}</s-badge>
                       )}
                     </s-stack>
                   </s-table-cell>
