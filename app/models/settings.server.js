@@ -103,17 +103,38 @@ export async function updateRestockLocation(shop, locationId, locations) {
 // money the day it's taken, or hold it for a year.
 export const PAYOUT_SCHEDULES = ["MANUAL", "DAILY", "WEEKLY", "MONTHLY"];
 
-export async function updatePayoutSettings(shop, { holdDays, minimum, requests, schedule, refundKeepsCommission }) {
-  const days = Math.trunc(Number(holdDays));
+export const HOLD_UNITS = ["DAYS", "WEEKS", "MONTHS"];
+
+// The longest hold allowed in each unit: about a year either way, so a slip of the finger
+// can't park every vendor's money for a decade.
+const HOLD_LIMIT = { DAYS: 365, WEEKS: 52, MONTHS: 12 };
+
+export async function updatePayoutSettings(shop, {
+  holdValue,
+  holdUnit,
+  minimum,
+  minimumEnabled,
+  requests,
+  schedule,
+  refundKeepsCommission,
+}) {
+  const value = Math.trunc(Number(holdValue));
   const floor = Number(minimum);
   const errors = {};
-  if (!Number.isFinite(days) || days < 0 || days > 90) errors.holdDays = "Choose between 0 and 90 days";
-  if (!Number.isFinite(floor) || floor < 0) errors.minimum = "Use zero or more";
+  if (!HOLD_UNITS.includes(holdUnit)) errors.holdUnit = "Choose days, weeks or months";
+  else if (!Number.isFinite(value) || value < 0 || value > HOLD_LIMIT[holdUnit]) {
+    errors.holdValue = `Choose between 0 and ${HOLD_LIMIT[holdUnit]}`;
+  }
+  if (minimumEnabled && (!Number.isFinite(floor) || floor <= 0)) {
+    errors.minimum = "Enter the smallest amount worth paying out";
+  } else if (!Number.isFinite(floor) || floor < 0) errors.minimum = "Use zero or more";
   if (!PAYOUT_SCHEDULES.includes(schedule)) errors.schedule = "Choose when payouts are made";
   if (Object.keys(errors).length) return { errors };
 
   const data = {
-    payoutHoldDays: days,
+    payoutHoldValue: value,
+    payoutHoldUnit: holdUnit,
+    payoutMinimumEnabled: Boolean(minimumEnabled),
     payoutMinimum: floor.toFixed(2),
     payoutRequests: Boolean(requests),
     payoutSchedule: schedule,

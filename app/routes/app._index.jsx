@@ -4,7 +4,7 @@ import { authenticate } from "../shopify.server";
 import { getVendorOverview } from "../models/vendor.server";
 import { dismissSetupGuide, getShopSettings } from "../models/settings.server";
 import db from "../db.server";
-import { vendorBalances } from "../models/ledger.server";
+import { holdOf, vendorBalances } from "../models/ledger.server";
 import { formatMoney } from "../utils/money";
 import { formatDate } from "../utils/vendor-display";
 
@@ -15,7 +15,7 @@ export const loader = async ({ request }) => {
     getShopSettings(session.shop),
   ]);
   const [balances, payoutsToSend, payoutRequests] = await Promise.all([
-    vendorBalances(session.shop, { holdDays: settings.payoutHoldDays }),
+    vendorBalances(session.shop, { hold: holdOf(settings) }),
     db.payout.count({ where: { shop: session.shop, status: "PENDING" } }),
     db.payout.count({ where: { shop: session.shop, status: "REQUESTED" } }),
   ]);

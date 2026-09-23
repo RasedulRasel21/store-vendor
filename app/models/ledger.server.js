@@ -104,12 +104,36 @@ export async function syncShopLedger(shop, { since } = {}) {
   return { orders: orders.length, entries };
 }
 
+// The store's hold, as it's set: a number and a unit.
+export function holdOf(settings) {
+  return { value: Math.max(0, settings?.payoutHoldValue ?? 7), unit: settings?.payoutHoldUnit ?? "DAYS" };
+}
+
+export function holdLabel({ value, unit }) {
+  const noun = { DAYS: "day", WEEKS: "week", MONTHS: "month" }[unit] ?? "day";
+  return `${value} ${value === 1 ? noun : `${noun}s`}`;
+}
+
 // When an order's share can be paid out: once the customer has paid and the items have
 // gone, plus the hold. Until both have happened it isn't known, so it stays pending.
-export function releasesAt(vendorOrder, holdDays) {
+// Months are counted on the calendar, so "1 month" after 31 January is 28 February.
+export function releasesAt(vendorOrder, hold) {
   if (!vendorOrder?.paidAt || !vendorOrder?.fulfilledAt) return null;
-  const from = Math.max(vendorOrder.paidAt.getTime(), vendorOrder.fulfilledAt.getTime());
-  return new Date(from + Math.max(0, holdDays) * DAY);
+
+  const { value, unit } = hold ?? { value: 7, unit: "DAYS" };
+  const from = new Date(Math.max(vendorOrder.paidAt.getTime(), vendorOrder.fulfilledAt.getTime()));
+  if (unit === "MONTHS") {
+    // A month on from the 31st lands on the last day of the shorter month, rather than
+    // rolling over into the one after it.
+    const release = new Date(from);
+    const dayOfMonth = release.getUTCDate();
+    release.setUTCDate(1);
+    release.setUTCMonth(release.getUTCMonth() + value);
+    const lastDay = new Date(Date.UTC(release.getUTCFullYear(), release.getUTCMonth() + 1, 0)).getUTCDate();
+    release.setUTCDate(Math.min(dayOfMonth, lastDay));
+    return release;
+  }
+  return new Date(from.getTime() + value * (unit === "WEEKS" ? 7 : 1) * DAY);
 }
 
 // Pending, available and paid for each vendor, all from the ledger.
@@ -120,7 +144,7 @@ export function releasesAt(vendorOrder, holdDays) {
 //   paid      - payouts actually sent, over all time
 // Takes an optional transaction client, so a caller holding a lock reads through the same
 // connection instead of asking the pool for a second one.
-export async function vendorBalances(shop, { vendorId, holdDays }, client = db) {
+export async function vendorBalances(shop, { vendorId, hold }, client = db) {
   const now = Date.now();
   const where = { shop, ...(vendorId ? { vendorId } : {}) };
 
@@ -152,7 +176,7 @@ export async function vendorBalances(shop, { vendorId, holdDays }, client = db) 
     const amount = Number(row._sum.amount ?? 0);
     const balance = balanceFor(row.vendorId);
     const order = row.vendorOrderId ? orderById.get(row.vendorOrderId) : null;
-    const release = order ? releasesAt(order, holdDays) : null;
+    const release = order ? releasesAt(order, hold) : null;
 
     // An entry tied to an order waits for that order; anything else counts straight away.
     if (order && (!release || release.getTime() > now)) balance.pending += amount;
@@ -232,7 +256,7 @@ export function vendorLedger(shop, vendorId, { take = 50 } = {}) {
   });
 }
 
-export async function vendorBalance(shop, vendorId, holdDays, client = db) {
-  const balances = await vendorBalances(shop, { vendorId, holdDays }, client);
+export async function vendorBalance(shop, vendorId, hold, client = db) {
+  const balances = await vendorBalances(shop, { vendorId, hold }, client);
   return balances.get(vendorId) ?? { pending: 0, available: 0, inFlight: 0, paid: 0 };
 }

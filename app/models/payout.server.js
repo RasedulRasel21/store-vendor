@@ -1,6 +1,6 @@
 import db from "../db.server";
 import { round2 } from "../utils/money";
-import { vendorBalance, vendorBalances } from "./ledger.server";
+import { holdOf, vendorBalance, vendorBalances } from "./ledger.server";
 import {
   notifyPayoutBounced,
   notifyPayoutCalledOff,
@@ -23,6 +23,11 @@ import { getShopSettings } from "./settings.server";
 // money can't be set aside twice while a bank transfer is in progress.
 
 const ACTIVE = ["REQUESTED", "PENDING"];
+
+// The floor a balance has to clear, or zero when the merchant hasn't set one.
+export function payoutMinimum(settings) {
+  return settings?.payoutMinimumEnabled ? round2(settings.payoutMinimum ?? 0) : 0;
+}
 
 async function logPayoutActivity(tx, vendorId, action, actor, details) {
   await tx.vendorActivity.create({ data: { vendorId, action, actor, details } });
@@ -61,10 +66,10 @@ async function setAside(tx, { shop, vendorId, amount, actor, payoutId, note }) {
   }
 
   // Read inside the lock, through the same connection, so it reflects anything just set aside.
-  const balance = await vendorBalance(shop, vendorId, settings?.payoutHoldDays ?? 7, tx);
+  const balance = await vendorBalance(shop, vendorId, holdOf(settings), tx);
   const available = round2(balance.available);
   const wanted = amount === undefined || amount === null || amount === "" ? available : round2(amount);
-  const minimum = round2(settings?.payoutMinimum ?? 0);
+  const minimum = payoutMinimum(settings);
 
   if (!(wanted > 0)) return { error: `${vendor.name} has nothing available to pay out.` };
   if (wanted > available) {
@@ -115,8 +120,9 @@ export function createPayout(shop, vendorId, { amount, actor, note } = {}) {
 // Pays every vendor whose available balance clears the minimum and who has payout details.
 export async function payEveryoneDue(shop, actor) {
   const settings = await getShopSettings(shop);
-  const balances = await vendorBalances(shop, { holdDays: settings.payoutHoldDays });
-  const minimum = Math.max(0.01, round2(settings.payoutMinimum));
+  const balances = await vendorBalances(shop, { hold: holdOf(settings) });
+  // Anything owed is worth paying when there's no minimum; a penny still isn't.
+  const minimum = Math.max(0.01, payoutMinimum(settings));
 
   const due = [...balances].filter(([, balance]) => balance.available >= minimum).map(([id]) => id);
   const vendors = await db.vendor.findMany({
@@ -240,7 +246,7 @@ function acceptRequest(shop, payoutId, actor) {
     if (payout.status !== "REQUESTED") return { error: "That request has already been dealt with" };
 
     const settings = await tx.shopSettings.findUnique({ where: { shop } });
-    const balance = await vendorBalance(shop, payout.vendorId, settings?.payoutHoldDays ?? 7, tx);
+    const balance = await vendorBalance(shop, payout.vendorId, holdOf(settings), tx);
     const amount = Math.min(Number(payout.amount), round2(balance.available));
 
     return setAside(tx, { shop, vendorId: payout.vendorId, amount, actor, payoutId: payout.id });
@@ -260,7 +266,7 @@ export async function listPayouts(shop, { status, vendorId } = {}) {
 export async function payoutOverview(shop) {
   const settings = await getShopSettings(shop);
   const [balances, vendors, counts] = await Promise.all([
-    vendorBalances(shop, { holdDays: settings.payoutHoldDays }),
+    vendorBalances(shop, { hold: holdOf(settings) }),
     db.vendor.findMany({
       where: { shop },
       orderBy: { name: "asc" },

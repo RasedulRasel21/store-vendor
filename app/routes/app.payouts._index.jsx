@@ -13,6 +13,7 @@ import {
   payEveryoneDue,
   payoutOverview,
 } from "../models/payout.server";
+import { holdLabel, holdOf } from "../models/ledger.server";
 import { issueMonthForEveryone, previousMonth } from "../models/invoice.server";
 import {
   autoSend,
@@ -60,7 +61,7 @@ export const loader = async ({ request }) => {
   return {
     tab,
     currency,
-    holdDays: settings.payoutHoldDays,
+    hold: holdLabel(holdOf(settings)),
     counts: Object.fromEntries(
       Object.entries(TABS).map(([key, value]) => [
         key,
@@ -174,7 +175,7 @@ const DONE = {
 };
 
 export default function Payouts() {
-  const { tab, counts, totals, vendors, payouts, holdDays } = useLoaderData();
+  const { tab, counts, totals, vendors, payouts, hold } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
   const submit = useSubmit();
@@ -309,7 +310,7 @@ export default function Payouts() {
 
       <s-section>
         <s-paragraph color="subdued">
-          {`StoreVendor never moves money. Send each payout from your own bank or wallet, then mark it sent here. A vendor's share becomes available ${holdDays} ${holdDays === 1 ? "day" : "days"} after the order is both paid and shipped.`}
+          {`StoreVendor never moves money. Send each payout from your own bank or wallet, then mark it sent here. A vendor's share becomes available ${hold} after the order is both paid and shipped.`}
         </s-paragraph>
         <s-grid gridTemplateColumns="repeat(4, minmax(0, 1fr))" gap="base">
           <s-stack direction="block">

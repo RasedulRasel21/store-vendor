@@ -72,8 +72,10 @@ export const loader = async ({ request }) => {
     },
     fulfillmentDays: settings.fulfillmentDays,
     payouts: {
-      holdDays: String(settings.payoutHoldDays),
+      holdValue: String(settings.payoutHoldValue),
+      holdUnit: settings.payoutHoldUnit,
       minimum: String(settings.payoutMinimum),
+      minimumEnabled: settings.payoutMinimumEnabled,
       requests: settings.payoutRequests,
       schedule: settings.payoutSchedule,
       refundKeepsCommission: settings.refundKeepsCommission,
@@ -162,8 +164,10 @@ export const action = async ({ request }) => {
 
   if (intent === "payouts") {
     const result = await updatePayoutSettings(session.shop, {
-      holdDays: formData.get("holdDays"),
+      holdValue: formData.get("holdValue"),
+      holdUnit: String(formData.get("holdUnit") ?? ""),
       minimum: formData.get("minimum"),
+      minimumEnabled: formData.get("minimumEnabled") === "on",
       requests: formData.get("requests") === "on",
       schedule: String(formData.get("schedule") ?? ""),
       refundKeepsCommission: formData.get("refundKeepsCommission") === "on",
@@ -413,19 +417,27 @@ export default function Settings() {
               hold below. The hold covers your own payout from Shopify and the returns window, so you
               never pay out money you haven&apos;t received or might have to refund.
             </s-paragraph>
-            <s-grid gridTemplateColumns="minmax(0,1fr) minmax(0,1fr)" gap="base">
+            <s-grid gridTemplateColumns="minmax(0,9rem) minmax(0,11rem) minmax(0,1fr)" gap="base">
               <s-number-field
-                label="Hold after shipping"
-                name="holdDays"
-                suffix="days"
+                label="Hold for"
+                name="holdValue"
                 inputMode="numeric"
                 step={1}
                 min={0}
-                max={90}
-                defaultValue={payouts.holdDays}
-                error={actionData?.intent === "payouts" ? actionData.errors?.holdDays : undefined}
+                defaultValue={payouts.holdValue}
+                error={actionData?.intent === "payouts" ? actionData.errors?.holdValue : undefined}
                 required
               ></s-number-field>
+              <s-select
+                label="&nbsp;"
+                name="holdUnit"
+                value={payouts.holdUnit}
+                error={actionData?.intent === "payouts" ? actionData.errors?.holdUnit : undefined}
+              >
+                <s-option value="DAYS">days</s-option>
+                <s-option value="WEEKS">weeks</s-option>
+                <s-option value="MONTHS">months</s-option>
+              </s-select>
               <s-number-field
                 label="Smallest payout"
                 name="minimum"
@@ -434,10 +446,15 @@ export default function Settings() {
                 step={0.01}
                 min={0}
                 defaultValue={payouts.minimum}
-                details="Balances below this wait until they're worth a transfer."
                 error={actionData?.intent === "payouts" ? actionData.errors?.minimum : undefined}
               ></s-number-field>
             </s-grid>
+            <s-checkbox
+              label="Only pay out once a vendor reaches the smallest payout"
+              name="minimumEnabled"
+              defaultChecked={payouts.minimumEnabled}
+              details="Off: any balance can be paid out, however small."
+            ></s-checkbox>
             <s-grid gridTemplateColumns="minmax(0,20rem)" gap="base">
               <s-select
                 label="Set payouts aside"

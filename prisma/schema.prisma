@@ -59,11 +59,14 @@ model ShopSettings {
   labelProvider  String?
   labelApiKey    String?
   labelAccount   String?
-  // Days after an order is both paid and shipped before the vendor's share can be paid
-  // out. Covers the store's own payout delay and the returns window.
-  payoutHoldDays Int     @default(7)
-  // Balances below this aren't worth a bank transfer.
-  payoutMinimum  Decimal @default(0) @db.Decimal(12, 2)
+  // How long after an order is both paid and shipped before the vendor's share can be paid
+  // out, counted in DAYS, WEEKS or MONTHS. Covers the store's own payout delay from Shopify
+  // and the returns window.
+  payoutHoldValue Int    @default(7)
+  payoutHoldUnit  String @default("DAYS")
+  // An optional floor: with it off, any balance can be paid out.
+  payoutMinimumEnabled Boolean @default(false)
+  payoutMinimum        Decimal @default(0) @db.Decimal(12, 2)
   // Whether vendors can ask for their available balance instead of waiting.
   payoutRequests Boolean @default(true)
   // MANUAL, WEEKLY (Mondays) or MONTHLY (the 1st): when everyone due is set aside to pay.

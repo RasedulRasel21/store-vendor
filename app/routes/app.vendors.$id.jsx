@@ -14,7 +14,7 @@ import {
 } from "../models/vendor.server";
 import { getShopCurrency, getShopSettings } from "../models/settings.server";
 import { syncCodRules } from "../models/cod-rules.server";
-import { adjustBalance, vendorBalance, vendorLedger } from "../models/ledger.server";
+import { adjustBalance, holdOf, vendorBalance, vendorLedger } from "../models/ledger.server";
 import { createPayout } from "../models/payout.server";
 import {
   issueInvoice,
@@ -87,7 +87,7 @@ export const loader = async ({ request, params }) => {
   ]);
   const commission = effectiveCommission(vendor, settings);
   const [balance, ledger, invoices] = await Promise.all([
-    vendorBalance(session.shop, vendor.id, settings.payoutHoldDays),
+    vendorBalance(session.shop, vendor.id, holdOf(settings)),
     vendorLedger(session.shop, vendor.id, { take: 25 }),
     listInvoices(session.shop, { vendorId: vendor.id, take: 12 }),
   ]);

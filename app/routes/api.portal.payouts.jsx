@@ -1,8 +1,8 @@
 import crypto from "node:crypto";
 import db from "../db.server";
-import { vendorBalance } from "../models/ledger.server";
+import { holdLabel, holdOf, vendorBalance } from "../models/ledger.server";
+import { payoutMinimum } from "../models/payout.server";
 import { getShopSettings } from "../models/settings.server";
-import { round2 } from "../utils/money";
 
 // The vendor portal shows balances and lets vendors ask to be paid. The balance rules live
 // here, next to the ledger, so the portal never works them out a second, different way.
@@ -21,18 +21,19 @@ const text = (value, max) => (typeof value === "string" ? value.trim().slice(0, 
 async function summary(vendor) {
   const settings = await getShopSettings(vendor.shop);
   const [balance, openRequest] = await Promise.all([
-    vendorBalance(vendor.shop, vendor.id, settings.payoutHoldDays),
+    vendorBalance(vendor.shop, vendor.id, holdOf(settings)),
     db.payout.findFirst({
       where: { vendorId: vendor.id, status: { in: ["REQUESTED", "PENDING"] } },
       select: { id: true, status: true, amount: true },
     }),
   ]);
-  const minimum = round2(settings.payoutMinimum);
+  const minimum = payoutMinimum(settings);
 
   return {
     ...balance,
     currencyCode: settings.currencyCode ?? "USD",
-    holdDays: settings.payoutHoldDays,
+    // A phrase like "7 days" or "1 month", so the portal doesn't have to word it itself.
+    hold: holdLabel(holdOf(settings)),
     minimum,
     requestsAllowed: settings.payoutRequests,
     hasPayoutDetails: Boolean(vendor.payoutMethod),
