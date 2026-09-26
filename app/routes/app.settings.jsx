@@ -56,6 +56,14 @@ export const loader = async ({ request }) => {
     shopLocations(admin),
   ]);
 
+  const storeBase = settings.shopDomain ? settings.shopDomain.replace(/\/$/, "") : null;
+  // A real seller's page reads better than a placeholder, when there is one to show.
+  const exampleVendor = await db.vendor.findFirst({
+    where: { shop: session.shop, status: "ACTIVE", products: { some: {} } },
+    orderBy: { name: "asc" },
+    select: { handle: true },
+  });
+
   return {
     currencyCode,
     locations: locations.map((location) => ({ id: location.id, name: location.name })),
@@ -131,11 +139,18 @@ export const loader = async ({ request }) => {
       autoInvoices: settings.autoInvoices,
       placeholder: SELLER_PLACEHOLDER,
     },
+    // The pages the app serves from the merchant's own domain. Nobody finds them unless
+    // the merchant links to them, so Settings has to say they exist.
+    storefront: {
+      base: storeBase,
+      directoryUrl: storeBase ? `${storeBase}/apps/vendors` : null,
+      exampleUrl: storeBase && exampleVendor ? `${storeBase}/apps/vendors/${exampleVendor.handle}` : null,
+    },
     applications: {
       url: applyUrl(applyHandle),
       // The same page on the merchant's own domain, inside their theme. Live only once the
       // app has been deployed with its proxy.
-      storefrontUrl: settings.shopDomain ? `${settings.shopDomain.replace(/\/$/, "")}/apps/vendors/apply` : null,
+      storefrontUrl: storeBase ? `${storeBase}/apps/vendors/apply` : null,
       open: settings.applyOpen,
       intro: settings.applyIntro ?? "",
       termsUrl: settings.applyTermsUrl ?? "",
@@ -353,6 +368,7 @@ export default function Settings() {
     payoutFx,
     rails,
     applications,
+    storefront,
   } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
@@ -427,6 +443,79 @@ export default function Settings() {
         </Form>
       </s-section>
 
+      <s-section heading="Your sellers on your storefront">
+        <s-stack direction="block" gap="base">
+          <s-paragraph color="subdued">
+            The app adds pages to your own store, inside your theme. They work as soon as
+            the app is installed — nothing to build, but nobody will find them until you
+            link to them.
+          </s-paragraph>
+
+          {storefront.directoryUrl ? (
+            <s-box padding="base" background="subdued" borderRadius="base">
+              <s-stack direction="block" gap="base">
+                <s-stack direction="block" gap="small">
+                  <s-text color="subdued">All your sellers, in one list</s-text>
+                  <s-link href={storefront.directoryUrl} target="_blank">
+                    {storefront.directoryUrl}
+                  </s-link>
+                </s-stack>
+                <s-stack direction="block" gap="small">
+                  <s-text color="subdued">A seller&apos;s own page</s-text>
+                  {storefront.exampleUrl ? (
+                    <s-link href={storefront.exampleUrl} target="_blank">
+                      {storefront.exampleUrl}
+                    </s-link>
+                  ) : (
+                    <s-text>{`${storefront.base}/apps/vendors/<seller>`}</s-text>
+                  )}
+                  <s-text color="subdued">
+                    One for every approved seller with products. Their name, what they sell,
+                    how they ship and their returns, with a link to everything they have for
+                    sale.
+                  </s-text>
+                </s-stack>
+              </s-stack>
+            </s-box>
+          ) : (
+            <s-banner tone="warning">
+              Your store&apos;s address isn&apos;t known yet. Reopen the app and it&apos;ll be
+              read from Shopify.
+            </s-banner>
+          )}
+
+          <s-stack direction="block" gap="small">
+            <s-text type="strong">Put it in your menu</s-text>
+            <s-paragraph color="subdued">
+              In Shopify admin go to Content, then Menus, open the menu you want, and add a
+              menu item with the link <s-text type="strong">/apps/vendors</s-text>. Call it
+              anything you like — Sellers, Our makers, Meet the makers.
+            </s-paragraph>
+            <s-stack direction="inline">
+              <s-button variant="secondary" href="shopify://admin/menus" target="_top">
+                Open menus
+              </s-button>
+            </s-stack>
+          </s-stack>
+
+          <s-stack direction="block" gap="small">
+            <s-text type="strong">Or put it straight in your theme</s-text>
+            <s-paragraph color="subdued">
+              In the theme editor, add a block from Apps. There are two:{" "}
+              <s-text type="strong">Sold by</s-text>, which shows who sells a product on the
+              product page and links to their page, and{" "}
+              <s-text type="strong">Sell with us</s-text>, the application form. Both have
+              their own settings for wording and layout.
+            </s-paragraph>
+            <s-stack direction="inline">
+              <s-button variant="secondary" href="shopify://admin/themes" target="_top">
+                Open themes
+              </s-button>
+            </s-stack>
+          </s-stack>
+        </s-stack>
+      </s-section>
+
       <s-section heading="Vendors applying to sell">
         <Form method="post">
           <input type="hidden" name="intent" value="applications" />
@@ -447,8 +536,7 @@ export default function Settings() {
                         {applications.storefrontUrl}
                       </s-link>
                       <s-text color="subdued">
-                        Link to this from your menu or footer. It works once the app has been
-                        deployed with its storefront pages.
+                        Add it to your menu the same way as the sellers page below.
                       </s-text>
                     </s-stack>
                   )}

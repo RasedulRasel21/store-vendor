@@ -172,6 +172,12 @@ export const loader = async ({ request, params }) => {
           ]
         : [],
       taxUpdatedAt: formatDate(vendor.taxInfoUpdatedAt),
+      // Their page on the storefront, once they're approved. A vendor awaiting approval
+      // has no public page, so there's nothing to link to.
+      storefrontUrl:
+        vendor.status === "ACTIVE" && settings.shopDomain
+          ? `${settings.shopDomain.replace(/\/$/, "")}/apps/vendors/${vendor.handle}`
+          : null,
       // What customers see on this vendor's own page. The merchant can read it here
       // because it's published on their storefront under their name.
       profile:
@@ -478,6 +484,11 @@ export default function VendorDetail() {
       >
         Edit
       </s-button>
+      {vendor.storefrontUrl && (
+        <s-button slot="secondary-actions" href={vendor.storefrontUrl} target="_blank">
+          View on your store
+        </s-button>
+      )}
       {canReject && (
         <s-button
           slot="secondary-actions"

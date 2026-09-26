@@ -2,6 +2,7 @@ import { useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { listVendors } from "../models/vendor.server";
+import db from "../db.server";
 import {
   formatDate,
   VENDOR_STATUS,
@@ -14,10 +15,16 @@ export const loader = async ({ request }) => {
   const status = VENDOR_STATUSES.includes(requested) ? requested : "";
 
   const { vendors, counts } = await listVendors(session.shop, { status });
+  // The public list of sellers, on the merchant's own storefront.
+  const settings = await db.shopSettings.findUnique({
+    where: { shop: session.shop },
+    select: { shopDomain: true },
+  });
 
   return {
     status,
     counts,
+    directoryUrl: settings?.shopDomain ? `${settings.shopDomain.replace(/\/$/, "")}/apps/vendors` : null,
     total: Object.values(counts).reduce((sum, count) => sum + count, 0),
     vendors: vendors.map((vendor) => ({
       id: vendor.id,
@@ -31,7 +38,7 @@ export const loader = async ({ request }) => {
 };
 
 export default function VendorsIndex() {
-  const { vendors, counts, total, status } = useLoaderData();
+  const { vendors, counts, total, status, directoryUrl } = useLoaderData();
 
   const filters = [
     { value: "", label: "All", count: total },
@@ -50,6 +57,11 @@ export default function VendorsIndex() {
       <s-button slot="secondary-actions" href="/app/vendors/import">
         Import from Shopify
       </s-button>
+      {directoryUrl && (
+        <s-button slot="secondary-actions" href={directoryUrl} target="_blank">
+          See them on your store
+        </s-button>
+      )}
 
       {total === 0 ? (
         <s-section>
