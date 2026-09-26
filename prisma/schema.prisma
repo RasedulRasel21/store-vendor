@@ -770,6 +770,7 @@ model Vendor {
   users              VendorUser[]
   products           VendorProduct[]
   activities         VendorActivity[]
+  agreementAcceptances VendorAgreementAcceptance[]
   productSubmissions ProductSubmission[]
   changeRequests     VendorChangeRequest[]
   orders             VendorOrder[]
@@ -853,6 +854,46 @@ model VendorProduct {
 
   @@unique([shop, productId])
   @@index([vendorId])
+}
+
+// The terms a store asks its vendors to agree to. Each published version is kept for
+// good, because an acceptance is worthless without the words that were accepted.
+model VendorAgreement {
+  id          String    @id @default(cuid())
+  shop        String
+  // 1, 2, 3… per shop. A draft has the number it will get when it's published.
+  version     Int
+  title       String
+  body        String
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  acceptances VendorAgreementAcceptance[]
+
+  @@unique([shop, version])
+  @@index([shop, publishedAt])
+}
+
+// Who agreed to what, when. Kept even if the vendor is removed from the store, which is
+// the point of keeping a record at all.
+model VendorAgreementAcceptance {
+  id          String          @id @default(cuid())
+  agreementId String
+  agreement   VendorAgreement @relation(fields: [agreementId], references: [id], onDelete: Cascade)
+  shop        String
+  vendorId    String
+  vendor      Vendor          @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  // The portal login that accepted it, and the name they typed as their signature.
+  vendorUserId String?
+  signedName   String
+  signedEmail  String
+  acceptedAt   DateTime       @default(now())
+  // A keyed hash, like applications: enough to tell two acceptances apart, useless alone.
+  signerHash   String?
+
+  @@unique([agreementId, vendorId])
+  @@index([shop, vendorId])
 }
 
 model VendorActivity {

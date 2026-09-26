@@ -21,6 +21,7 @@
       "routes/webhooks.refunds.create": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/webhooks.orders.create": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/webhooks.orders.edited": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/api.portal.agreement": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/webhooks.collections": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/webhooks.compliance": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/api.cron.reconcile": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
@@ -55,6 +56,7 @@
       "routes/app.vendors.$id": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/app.vendors.new": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/app.orders.$id": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/app.agreement": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/app.settings": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/app.emails": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/app._index": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0"
@@ -161,6 +163,15 @@
         "parentId": "root",
         "file": "app/routes/webhooks.orders.edited.jsx",
         "path": "webhooks/orders/edited",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/api.portal.agreement": {
+        "id": "routes/api.portal.agreement",
+        "parentId": "root",
+        "file": "app/routes/api.portal.agreement.jsx",
+        "path": "api/portal/agreement",
         "config": {
           "runtime": "nodejs"
         }
@@ -484,6 +495,15 @@
           "runtime": "nodejs"
         }
       },
+      "routes/app.agreement": {
+        "id": "routes/app.agreement",
+        "parentId": "routes/app",
+        "file": "app/routes/app.agreement.jsx",
+        "path": "agreement",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
       "routes/app.settings": {
         "id": "routes/app.settings",
         "parentId": "routes/app",
@@ -597,6 +617,12 @@
         "parentId": "root",
         "file": "routes/webhooks.orders.edited.jsx",
         "path": "webhooks/orders/edited"
+      },
+      "routes/api.portal.agreement": {
+        "id": "routes/api.portal.agreement",
+        "parentId": "root",
+        "file": "routes/api.portal.agreement.jsx",
+        "path": "api/portal/agreement"
       },
       "routes/webhooks.collections": {
         "id": "routes/webhooks.collections",
@@ -814,6 +840,12 @@
         "file": "routes/app.orders.$id.jsx",
         "path": "orders/:id"
       },
+      "routes/app.agreement": {
+        "id": "routes/app.agreement",
+        "parentId": "routes/app",
+        "file": "routes/app.agreement.jsx",
+        "path": "agreement"
+      },
       "routes/app.settings": {
         "id": "routes/app.settings",
         "parentId": "routes/app",
@@ -902,6 +934,11 @@
             "id": "routes/webhooks.orders.edited",
             "file": "routes/webhooks.orders.edited.jsx",
             "path": "webhooks/orders/edited"
+          },
+          {
+            "id": "routes/api.portal.agreement",
+            "file": "routes/api.portal.agreement.jsx",
+            "path": "api/portal/agreement"
           },
           {
             "id": "routes/webhooks.collections",
@@ -1083,6 +1120,11 @@
                 "id": "routes/app.orders.$id",
                 "file": "routes/app.orders.$id.jsx",
                 "path": "orders/:id"
+              },
+              {
+                "id": "routes/app.agreement",
+                "file": "routes/app.agreement.jsx",
+                "path": "agreement"
               },
               {
                 "id": "routes/app.settings",
