@@ -1,3 +1,12 @@
-// yourstore.com/apps/vendors. The vendor directory belongs here; until it's built, the
-// address people are most likely to have been given is the one that answers.
-export { action, loader } from "./proxy.apply";
+import { authenticate } from "../shopify.server";
+import { vendorDirectory } from "../models/storefront.server";
+import { directoryPage } from "../models/storefront-page.server";
+
+// yourstore.com/apps/vendors — everyone selling in this shop.
+export const loader = async ({ request }) => {
+  const { liquid, session } = await authenticate.public.appProxy(request);
+  if (!session) return new Response("Not found", { status: 404 });
+
+  const vendors = await vendorDirectory(session.shop);
+  return liquid(directoryPage(vendors));
+};
