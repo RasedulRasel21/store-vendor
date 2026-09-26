@@ -14,6 +14,7 @@ import {
   submissionOptions,
   submissionVariants,
 } from "../models/product-submission.server";
+import { productDiff } from "../models/product-diff.server";
 import { getShopCollections } from "../models/collection.server";
 import { getShopSettings } from "../models/settings.server";
 import { sanitizeDescription } from "../utils/sanitize-description.server";
@@ -59,10 +60,13 @@ export const loader = async ({ request, params }) => {
   const changes = reviewedProduct(submission);
   const isEdit = Boolean(submission.pendingSubmittedAt);
   const collections = await getShopCollections(session.shop, changes.collectionIds ?? []);
+  // For an edit, what's different rather than the whole product again.
+  const diff = await productDiff(submission);
 
   return {
     currencyCode: settings.currencyCode ?? "USD",
     collections: collections.map((collection) => collection.title),
+    diff,
     submission: {
       id: submission.id,
       isEdit,
@@ -116,7 +120,9 @@ export const action = async ({ request, params }) => {
 };
 
 export default function ReviewProduct() {
-  const { submission, currencyCode, collections } = useLoaderData();
+  const { submission, currencyCode, collections, diff } = useLoaderData();
+  // Worth shouting about: a price that moved a fifth or more.
+  const bigPriceMove = Boolean(diff?.biggestPriceMove) && Math.abs(diff.biggestPriceMove) >= 20;
   const fetcher = useFetcher();
   const shopify = useAppBridge();
   const [note, setNote] = useState("");
@@ -162,9 +168,110 @@ export default function ReviewProduct() {
       )}
 
       {submission.isEdit && (
-        <s-banner tone="info" heading="Changes to a product that's live">
-          {`The vendor edited "${submission.liveTitle}". What you see below is their new version; the live product stays as it is until you approve.`}
+        <s-banner
+          tone={bigPriceMove ? "warning" : "info"}
+          heading={
+            bigPriceMove
+              ? `A price changed by ${Math.abs(diff.biggestPriceMove)}%`
+              : "Changes to a product that's live"
+          }
+        >
+          {`The vendor edited "${submission.liveTitle}". The live product stays as it is until you approve.`}
         </s-banner>
+      )}
+
+      {submission.isEdit && (
+        <s-section heading="What changed">
+          {!diff || diff.changes.length === 0 ? (
+            <s-paragraph color="subdued">
+              Nothing we can see. They may have resubmitted without changing anything.
+            </s-paragraph>
+          ) : (
+            <s-stack direction="block" gap="base">
+              {diff.changes.map((change) => (
+                <s-stack key={change.label} direction="block" gap="small">
+                  <s-text type="strong">{change.label}</s-text>
+
+                  {change.kind === "text" && (
+                    <s-grid gridTemplateColumns="auto minmax(0,1fr)" gap="small">
+                      <s-text color="subdued">Was</s-text>
+                      <s-text>{change.before || "—"}</s-text>
+                      <s-text color="subdued">Now</s-text>
+                      <s-text>{change.after || "—"}</s-text>
+                    </s-grid>
+                  )}
+
+                  {change.kind === "list" && (
+                    <s-stack direction="block" gap="small">
+                      {change.added.length > 0 && (
+                        <s-stack direction="inline" gap="small" alignItems="center">
+                          <s-badge tone="success">Added</s-badge>
+                          <s-text>{change.added.join(", ")}</s-text>
+                        </s-stack>
+                      )}
+                      {change.removed.length > 0 && (
+                        <s-stack direction="inline" gap="small" alignItems="center">
+                          <s-badge tone="critical">Removed</s-badge>
+                          <s-text>{change.removed.join(", ")}</s-text>
+                        </s-stack>
+                      )}
+                    </s-stack>
+                  )}
+
+                  {change.kind === "images" && (
+                    <s-stack direction="block" gap="small">
+                      {change.added.length > 0 && (
+                        <s-stack direction="inline" gap="small" alignItems="center">
+                          <s-badge tone="success">{`${change.added.length} added`}</s-badge>
+                          {change.added.slice(0, 6).map((url) => (
+                            <s-thumbnail key={url} src={url} alt="" size="small"></s-thumbnail>
+                          ))}
+                        </s-stack>
+                      )}
+                      {change.removed.length > 0 && (
+                        <s-stack direction="inline" gap="small" alignItems="center">
+                          <s-badge tone="critical">{`${change.removed.length} removed`}</s-badge>
+                          {change.removed.slice(0, 6).map((url) => (
+                            <s-thumbnail key={url} src={url} alt="" size="small"></s-thumbnail>
+                          ))}
+                        </s-stack>
+                      )}
+                      {change.reordered && <s-text color="subdued">Put in a different order</s-text>}
+                    </s-stack>
+                  )}
+
+                  {change.kind === "variants" && (
+                    <s-stack direction="block" gap="small">
+                      {change.rows.map((row) => (
+                        <s-stack key={row.name} direction="block" gap="small">
+                          <s-stack direction="inline" gap="small" alignItems="center">
+                            {row.kind === "added" && <s-badge tone="success">New</s-badge>}
+                            {row.kind === "removed" && <s-badge tone="critical">Gone</s-badge>}
+                            <s-text type="strong">{row.name}</s-text>
+                            {row.kind === "added" && row.detail && (
+                              <s-text color="subdued">{`${row.detail} ${currencyCode}`}</s-text>
+                            )}
+                          </s-stack>
+                          {(row.fields ?? []).map((field) => (
+                            <s-stack key={field.label} direction="inline" gap="small" alignItems="center">
+                              <s-text color="subdued">{field.label}</s-text>
+                              <s-text>{`${field.before ?? "—"} → ${field.after ?? "—"}`}</s-text>
+                              {typeof field.percent === "number" && field.percent !== 0 && (
+                                <s-badge tone={Math.abs(field.percent) >= 20 ? "warning" : "neutral"}>
+                                  {`${field.percent > 0 ? "+" : ""}${field.percent}%`}
+                                </s-badge>
+                              )}
+                            </s-stack>
+                          ))}
+                        </s-stack>
+                      ))}
+                    </s-stack>
+                  )}
+                </s-stack>
+              ))}
+            </s-stack>
+          )}
+        </s-section>
       )}
 
       {approving && (
