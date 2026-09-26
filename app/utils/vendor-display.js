@@ -70,6 +70,7 @@ const ACTIVITY_LABELS = {
   "vendor.fulfillment_updated": "Shipping and COD changed",
   "vendor_user.invite_accepted": "Portal invite accepted",
   "vendor.contact_updated": "Contact details updated by vendor",
+  "vendor.profile_updated": "Shop page updated by vendor",
   "order.received": "Order received",
   "order.fulfilled": "Order marked shipped",
   "order.partly_fulfilled": "Part of an order shipped",

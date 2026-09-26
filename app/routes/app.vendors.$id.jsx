@@ -172,6 +172,18 @@ export const loader = async ({ request, params }) => {
           ]
         : [],
       taxUpdatedAt: formatDate(vendor.taxInfoUpdatedAt),
+      // What customers see on this vendor's own page. The merchant can read it here
+      // because it's published on their storefront under their name.
+      profile:
+        vendor.logoUrl || vendor.bannerUrl || vendor.bio || vendor.returnPolicy || vendor.shippingPolicy
+          ? {
+              logoUrl: vendor.logoUrl,
+              bannerUrl: vendor.bannerUrl,
+              bio: vendor.bio,
+              shippingPolicy: vendor.shippingPolicy,
+              returnPolicy: vendor.returnPolicy,
+            }
+          : null,
       // What they said when they applied, for a vendor who came in through the store's own
       // application page. Empty for one the merchant added.
       application: vendor.application
@@ -521,6 +533,45 @@ export default function VendorDetail() {
           <s-text>{vendor.approvedAt ?? "Not approved"}</s-text>
         </s-grid>
       </s-section>
+
+      {vendor.profile && (
+        <s-section heading="Their shop page">
+          <s-stack direction="block" gap="base">
+            <s-paragraph color="subdued">
+              What customers see on this vendor&apos;s page. They write it themselves in the
+              portal, and it appears on your storefront.
+            </s-paragraph>
+            {vendor.profile.bannerUrl && (
+              <s-image
+                src={vendor.profile.bannerUrl}
+                alt=""
+                aspectRatio="4/1"
+                objectFit="cover"
+                loading="lazy"
+              ></s-image>
+            )}
+            <s-stack direction="inline" gap="base" alignItems="center">
+              {vendor.profile.logoUrl && (
+                <s-thumbnail src={vendor.profile.logoUrl} alt="" size="small"></s-thumbnail>
+              )}
+              <s-text type="strong">{vendor.name}</s-text>
+            </s-stack>
+            {vendor.profile.bio && <s-paragraph>{vendor.profile.bio}</s-paragraph>}
+            {vendor.profile.shippingPolicy && (
+              <s-stack direction="block" gap="small">
+                <s-text type="strong">How they ship</s-text>
+                <s-paragraph color="subdued">{vendor.profile.shippingPolicy}</s-paragraph>
+              </s-stack>
+            )}
+            {vendor.profile.returnPolicy && (
+              <s-stack direction="block" gap="small">
+                <s-text type="strong">Returns</s-text>
+                <s-paragraph color="subdued">{vendor.profile.returnPolicy}</s-paragraph>
+              </s-stack>
+            )}
+          </s-stack>
+        </s-section>
+      )}
 
       {vendor.application && (
         <s-section heading="Their application">
