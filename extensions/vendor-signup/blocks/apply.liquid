@@ -14,7 +14,12 @@
 -%}
 
 <div
-  class="sv-apply sv-apply--{{ width }} color-{{ block.settings.color_scheme }}"
+  {%- comment -%}
+    No colour setting of its own: an app block sits inside one of the theme's sections,
+    and that section already has the theme's colour scheme on it. Inheriting means the
+    form matches whatever the merchant chose for the section around it.
+  {%- endcomment -%}
+  class="sv-apply sv-apply--{{ width }}"
   data-sv-apply
   style="--sv-gap: {{ block.settings.field_gap }}px; text-align: {{ block.settings.alignment }};"
   {{ block.shopify_attributes }}
@@ -169,9 +174,17 @@
       ],
       "default": "medium"
     },
-    { "type": "text_alignment", "id": "alignment", "label": "Heading alignment", "default": "left" },
+    {
+      "type": "select",
+      "id": "alignment",
+      "label": "Heading alignment",
+      "options": [
+        { "value": "left", "label": "Left" },
+        { "value": "center", "label": "Centred" }
+      ],
+      "default": "left"
+    },
     { "type": "range", "id": "field_gap", "label": "Space between fields", "min": 8, "max": 32, "step": 2, "unit": "px", "default": 18 },
-    { "type": "color_scheme", "id": "color_scheme", "label": "Colours", "default": "scheme-1" },
     { "type": "header", "content": "What to ask for" },
     { "type": "checkbox", "id": "ask_phone", "label": "Phone number", "default": true },
     { "type": "checkbox", "id": "ask_website", "label": "Website or social page", "default": true },
