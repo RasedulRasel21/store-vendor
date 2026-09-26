@@ -13,6 +13,7 @@
       "routes/webhooks.fulfillments.create": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/webhooks.app.scopes_update": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/webhooks.orders.cancelled": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/api.portal.product-rules": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/webhooks.app.uninstalled": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/webhooks.products.delete": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/webhooks.orders.updated": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
@@ -87,6 +88,15 @@
         "parentId": "root",
         "file": "app/routes/webhooks.orders.cancelled.jsx",
         "path": "webhooks/orders/cancelled",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/api.portal.product-rules": {
+        "id": "routes/api.portal.product-rules",
+        "parentId": "root",
+        "file": "app/routes/api.portal.product-rules.jsx",
+        "path": "api/portal/product-rules",
         "config": {
           "runtime": "nodejs"
         }
@@ -530,6 +540,12 @@
         "file": "routes/webhooks.orders.cancelled.jsx",
         "path": "webhooks/orders/cancelled"
       },
+      "routes/api.portal.product-rules": {
+        "id": "routes/api.portal.product-rules",
+        "parentId": "root",
+        "file": "routes/api.portal.product-rules.jsx",
+        "path": "api/portal/product-rules"
+      },
       "routes/webhooks.app.uninstalled": {
         "id": "routes/webhooks.app.uninstalled",
         "parentId": "root",
@@ -830,6 +846,11 @@
             "id": "routes/webhooks.orders.cancelled",
             "file": "routes/webhooks.orders.cancelled.jsx",
             "path": "webhooks/orders/cancelled"
+          },
+          {
+            "id": "routes/api.portal.product-rules",
+            "file": "routes/api.portal.product-rules.jsx",
+            "path": "api/portal/product-rules"
           },
           {
             "id": "routes/webhooks.app.uninstalled",

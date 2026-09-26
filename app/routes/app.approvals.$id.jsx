@@ -15,6 +15,7 @@ import {
   submissionVariants,
 } from "../models/product-submission.server";
 import { productDiff } from "../models/product-diff.server";
+import { checkProduct } from "../models/listing-rules.server";
 import { getShopCollections } from "../models/collection.server";
 import { getShopSettings } from "../models/settings.server";
 import { sanitizeDescription } from "../utils/sanitize-description.server";
@@ -62,11 +63,17 @@ export const loader = async ({ request, params }) => {
   const collections = await getShopCollections(session.shop, changes.collectionIds ?? []);
   // For an edit, what's different rather than the whole product again.
   const diff = await productDiff(submission);
+  // Rules can change after a vendor submits, so this is said rather than enforced: it's
+  // the merchant's own rule, and theirs to waive.
+  const { problems } = await checkProduct(session.shop, submission.vendorId, changes, {
+    submissionId: submission.id,
+  });
 
   return {
     currencyCode: settings.currencyCode ?? "USD",
     collections: collections.map((collection) => collection.title),
     diff,
+    ruleProblems: problems,
     submission: {
       id: submission.id,
       isEdit,
@@ -120,7 +127,7 @@ export const action = async ({ request, params }) => {
 };
 
 export default function ReviewProduct() {
-  const { submission, currencyCode, collections, diff } = useLoaderData();
+  const { submission, currencyCode, collections, diff, ruleProblems } = useLoaderData();
   // Worth shouting about: a price that moved a fifth or more.
   const bigPriceMove = Boolean(diff?.biggestPriceMove) && Math.abs(diff.biggestPriceMove) >= 20;
   const fetcher = useFetcher();
@@ -272,6 +279,19 @@ export default function ReviewProduct() {
             </s-stack>
           )}
         </s-section>
+      )}
+
+      {ruleProblems.length > 0 && isPending && (
+        <s-banner tone="warning" heading="Doesn't meet your own rules">
+          <s-unordered-list>
+            {ruleProblems.map((problem) => (
+              <s-list-item key={problem}>{problem}</s-list-item>
+            ))}
+          </s-unordered-list>
+          <s-paragraph color="subdued">
+            You can still approve it — these are your rules, not Shopify&apos;s.
+          </s-paragraph>
+        </s-banner>
       )}
 
       {approving && (

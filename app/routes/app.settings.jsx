@@ -24,6 +24,7 @@ import {
   updateTaxReporting,
 } from "../models/settings.server";
 import { applyUrl, ensureApplyHandle, updateApplicationSettings } from "../models/application.server";
+import { listingRules, RULE_LIMITS, updateListingRules } from "../models/listing-rules.server";
 import { ratesAreStale, ratesMatchCurrency } from "../models/fx.server";
 import { SELLER_PLACEHOLDER } from "../models/invoice.server";
 import { connectPaypal, connectStripe, disconnectRail } from "../models/payout-rails.server";
@@ -145,6 +146,11 @@ export const loader = async ({ request }) => {
       base: storeBase,
       directoryUrl: storeBase ? `${storeBase}/apps/vendors` : null,
       exampleUrl: storeBase && exampleVendor ? `${storeBase}/apps/vendors/${exampleVendor.handle}` : null,
+    },
+    rules: {
+      ...listingRules(settings),
+      bannedWordsText: (settings.bannedWords ?? []).join("\n"),
+      limits: RULE_LIMITS,
     },
     applications: {
       url: applyUrl(applyHandle),
@@ -285,6 +291,17 @@ export const action = async ({ request }) => {
     return { intent, errors: result.errors ?? null, saved: Boolean(result.saved) };
   }
 
+  if (intent === "listingRules") {
+    const result = await updateListingRules(session.shop, {
+      minImages: formData.get("minImages"),
+      requireDescription: formData.get("requireDescription") === "on",
+      requireProductType: formData.get("requireProductType") === "on",
+      bannedWords: formData.get("bannedWords"),
+      maxProducts: formData.get("maxProducts"),
+    });
+    return { intent, errors: result.errors ?? null, saved: Boolean(result.saved) };
+  }
+
   if (intent === "applications") {
     const result = await updateApplicationSettings(session.shop, {
       open: formData.get("applyOpen") === "on",
@@ -369,6 +386,7 @@ export default function Settings() {
     rails,
     applications,
     storefront,
+    rules,
   } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
@@ -436,6 +454,66 @@ export default function Settings() {
                 variant="primary"
                 loading={submittingIntent === "commission"}
               >
+                Save
+              </s-button>
+            </s-stack>
+          </s-stack>
+        </Form>
+      </s-section>
+
+      <s-section heading="What a product needs before a vendor can submit it">
+        <Form method="post">
+          <input type="hidden" name="intent" value="listingRules" />
+          <s-stack direction="block" gap="base">
+            <s-paragraph color="subdued">
+              Checked when a vendor presses submit, so they fix it themselves instead of
+              waiting for you to send it back. Leave everything blank or off and nothing is
+              enforced.
+            </s-paragraph>
+
+            <s-grid gridTemplateColumns="minmax(0,1fr) minmax(0,1fr)" gap="base">
+              <s-number-field
+                label="Photos, at least"
+                name="minImages"
+                inputMode="numeric"
+                min={0}
+                max={rules.limits.images}
+                defaultValue={String(rules.minImages)}
+                details="0 means no rule."
+              ></s-number-field>
+              <s-number-field
+                label="Most products per vendor"
+                name="maxProducts"
+                inputMode="numeric"
+                min={0}
+                max={rules.limits.products}
+                defaultValue={String(rules.maxProducts)}
+                details="0 means as many as they like. Counts drafts, products waiting for you and live ones."
+              ></s-number-field>
+            </s-grid>
+
+            <s-checkbox
+              label="Every product needs a description"
+              name="requireDescription"
+              defaultChecked={rules.requireDescription}
+            ></s-checkbox>
+            <s-checkbox
+              label="Every product needs a product type"
+              name="requireProductType"
+              defaultChecked={rules.requireProductType}
+            ></s-checkbox>
+
+            <s-text-area
+              label="Words you won't have in a title or description"
+              name="bannedWords"
+              rows={3}
+              defaultValue={rules.bannedWordsText}
+              placeholder={"replica\nhandmade\nauthentic"}
+              details="One per line. Matched whole and ignoring case, so banning ale doesn't ban sale."
+            ></s-text-area>
+
+            <s-stack direction="inline">
+              <s-button type="submit" loading={submittingIntent === "listingRules"}>
                 Save
               </s-button>
             </s-stack>

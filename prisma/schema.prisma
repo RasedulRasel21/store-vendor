@@ -103,6 +103,17 @@ model ShopSettings {
   // like { "USD": "0.0082" }: the bank sets the real rate, so these only say how much to
   // send and are copied onto each payout. Fetched daily unless the merchant turns that off
   // and types their own. The base is remembered so rates can't outlive a currency change.
+  // What a vendor's product has to have before they can submit it. All off by default:
+  // a store that doesn't care shouldn't have rules it never asked for.
+  minProductImages   Int      @default(0)
+  requireDescription Boolean  @default(false)
+  requireProductType Boolean  @default(false)
+  // Words that can't appear in a title or description, one per entry, matched whole and
+  // without regard to case.
+  bannedWords        String[]
+  // 0 means as many as they like.
+  maxProductsPerVendor Int    @default(0)
+
   // The store's public "sell with us" page: its address, whether it's taking applications,
   // and what it says. The handle is unique across every store, because the page is served
   // from one address for all of them.
