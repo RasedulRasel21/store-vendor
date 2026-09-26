@@ -60,6 +60,10 @@ export const VENDOR_USER_STATUS = {
 
 const ACTIVITY_LABELS = {
   "vendor.created": "Vendor added",
+  "vendor.applied": "Applied to sell",
+  "vendor.applied_again": "Applied again, with new answers",
+  "vendor.applied_after_rejection": "Applied again after being turned down",
+  "vendor.applied_while_active": "Someone applied with this vendor's email",
   "vendor.updated": "Details updated",
   "vendor.imported": "Imported from Shopify",
   "vendor.commission_updated": "Commission changed",

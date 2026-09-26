@@ -153,20 +153,66 @@ async function record(settings, input, { ip, elapsedMs } = {}) {
   // A field nobody can see, filled in only by something that fills in every field, and a
   // form sent faster than it can be read. Both are quietly accepted and thrown away, so
   // whatever sent them learns nothing.
-  if (text(input.website2, 100) || (typeof elapsedMs === "number" && elapsedMs >= 0 && elapsedMs < 2000)) {
+  const trap = text(input.website2, 100);
+  const tooFast = typeof elapsedMs === "number" && elapsedMs >= 0 && elapsedMs < 2000;
+  if (trap || tooFast) {
+    // Said in the log, not to the sender: whatever did this learns nothing either way, but
+    // a real person caught by mistake would otherwise vanish without trace.
+    console.info(`Application dropped for ${settings.shop}: ${trap ? "hidden field filled" : `sent in ${elapsedMs}ms`}`);
     return { ok: true, ignored: true };
   }
 
   const { errors, values } = validate(input);
   if (Object.keys(errors).length) return { errors };
 
+  const applicationDetails = {
+    contactName: values.contactName,
+    website: values.website || null,
+    sells: values.sells,
+    catalogueSize: values.catalogueSize || null,
+    message: values.message || null,
+    agreedTerms: true,
+  };
+
   const existing = await db.vendor.findUnique({
     where: { shop_email: { shop: settings.shop, email: values.email } },
-    select: { status: true },
+    select: { id: true, status: true },
   });
   if (existing) {
-    // Never say whether an address is already a vendor here: that would turn the form into
-    // a way of asking who sells in this store.
+    // The answer to the sender never changes, whatever the reason: saying "you already
+    // sell here" would turn the form into a way of asking who sells in this store. What
+    // happens behind it does depend on where they stand.
+    const now = new Date();
+
+    if (existing.status === "REJECTED" || existing.status === "PENDING") {
+      // Turned down before, or still waiting: this is them trying again, so the merchant
+      // sees the new answers rather than the application disappearing. An earlier
+      // rejection reason is kept, so the merchant has the history in front of them.
+      await db.vendor.update({
+        where: { id: existing.id },
+        data: {
+          status: "PENDING",
+          name: values.name,
+          phone: values.phone || null,
+          countryCode: values.countryCode,
+          application: applicationDetails,
+          appliedAt: now,
+          activities: {
+            create: {
+              action: existing.status === "REJECTED" ? "vendor.applied_after_rejection" : "vendor.applied_again",
+              actor: "applicant",
+            },
+          },
+        },
+      });
+      return { ok: true, reapplied: true };
+    }
+
+    // Already selling, or suspended. Nothing changes, but the merchant can see it was
+    // tried on the vendor's own timeline.
+    await db.vendorActivity.create({
+      data: { vendorId: existing.id, action: "vendor.applied_while_active", actor: "applicant" },
+    });
     return { ok: true, duplicate: true };
   }
 
@@ -196,14 +242,7 @@ async function record(settings, input, { ip, elapsedMs } = {}) {
       status: "PENDING",
       appliedAt: now,
       applicantHash: fingerprint,
-      application: {
-        contactName: values.contactName,
-        website: values.website || null,
-        sells: values.sells,
-        catalogueSize: values.catalogueSize || null,
-        message: values.message || null,
-        agreedTerms: true,
-      },
+      application: applicationDetails,
       // The login is created now but has no invite token, so it can't be used until the
       // merchant approves and sends one.
       users: { create: { email: values.email, role: "OWNER" } },

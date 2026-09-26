@@ -166,10 +166,19 @@ export function page(form, { errors = {}, values = {}, message } = {}) {
 }
 
 export function thanks(form) {
+  // Shown to everyone, so it gives nothing away — but it's the nudge a person needs when
+  // they've applied with an address that already sells here and heard the same "thanks".
+  const portal = process.env.VENDOR_PORTAL_URL;
+  const signIn = portal
+    ? `<p class="sv-apply__note">Already selling with ${escapeHtml(form.storeName)}?
+       <a href="${escapeHtml(portal.replace(/\/$/, ""))}/login">Sign in</a>.</p>`
+    : "";
+
   return `${STYLES}
     <div class="sv-apply sv-apply--done">
       <h1>Thanks — we have your application</h1>
       <p>Someone at ${escapeHtml(form.storeName)} will read it and get back to you. If they take you
       on, you'll get an email with a link to set up your account and start adding products.</p>
+      ${signIn}
     </div>`;
 }
