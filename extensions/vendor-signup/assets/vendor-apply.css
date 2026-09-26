@@ -113,3 +113,16 @@
   position: absolute !important;
   left: -9999px !important;
 }
+
+/* "Sold by" on a product page. One line, borrowing the theme's type and colour. */
+.sv-soldby {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: baseline;
+  margin: 0.75rem 0;
+}
+.sv-soldby__label { opacity: 0.7; }
+.sv-soldby__name { font-weight: 600; color: inherit; }
+a.sv-soldby__name { text-decoration: underline; text-underline-offset: 0.2em; }
+a.sv-soldby__name:hover { opacity: 0.8; }

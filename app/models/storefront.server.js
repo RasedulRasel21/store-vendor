@@ -37,21 +37,40 @@ export async function vendorDirectory(shop) {
   return vendors.map(card);
 }
 
+// Letters and digits only. Shopify's handleize and our own slugify disagree about
+// apostrophes — "Rassel's Store" becomes rassels-store to one and rassel-s-store to the
+// other — so a link built in a theme from the product's vendor name still has to find the
+// right shop. Comparing them stripped of everything else settles it.
+const bare = (value) => String(value ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+async function findVendor(shop, handle) {
+  const wanted = String(handle ?? "").toLowerCase().slice(0, 80);
+  const select = {
+    name: true,
+    handle: true,
+    logoUrl: true,
+    bannerUrl: true,
+    bio: true,
+    shippingPolicy: true,
+    returnPolicy: true,
+    countryCode: true,
+    _count: { select: { products: true } },
+  };
+
+  const exact = await db.vendor.findFirst({ where: { shop, handle: wanted, status: "ACTIVE" }, select });
+  if (exact) return exact;
+
+  // Nothing with that handle: try the shops whose handle or name comes out the same once
+  // every separator is taken away.
+  const target = bare(wanted);
+  if (!target) return null;
+
+  const candidates = await db.vendor.findMany({ where: { shop, status: "ACTIVE" }, select });
+  return candidates.find((v) => bare(v.handle) === target || bare(v.name) === target) ?? null;
+}
+
 export async function vendorPage(shop, handle) {
-  const vendor = await db.vendor.findFirst({
-    where: { shop, handle: String(handle ?? "").toLowerCase().slice(0, 80), status: "ACTIVE" },
-    select: {
-      name: true,
-      handle: true,
-      logoUrl: true,
-      bannerUrl: true,
-      bio: true,
-      shippingPolicy: true,
-      returnPolicy: true,
-      countryCode: true,
-      _count: { select: { products: true } },
-    },
-  });
+  const vendor = await findVendor(shop, handle);
   if (!vendor) return null;
 
   return {

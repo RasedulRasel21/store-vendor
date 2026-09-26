@@ -1,0 +1,45 @@
+{%- comment -%}
+  "Sold by <seller>" on a product page, linking to that seller's page in this shop.
+
+  The link is built from the product's vendor name, which the app sets on every product it
+  links to a seller. The app resolves it either way round, so a name with an apostrophe or
+  an accent still finds the right shop.
+
+  Nothing is shown for a product with no vendor, so a shop that only sometimes uses
+  sellers doesn't get an empty line on every other product.
+{%- endcomment -%}
+
+{%- liquid
+  assign vendor_name = product.vendor | strip
+  assign vendor_handle = vendor_name | handleize
+-%}
+
+{%- if vendor_name != blank -%}
+  <div class="sv-soldby" {{ block.shopify_attributes }}>
+    <span class="sv-soldby__label">{{ block.settings.label | default: 'Sold by' }}</span>
+    {%- if block.settings.link_to_page -%}
+      <a class="sv-soldby__name" href="/apps/vendors/{{ vendor_handle }}">{{ vendor_name }}</a>
+    {%- else -%}
+      <span class="sv-soldby__name">{{ vendor_name }}</span>
+    {%- endif -%}
+  </div>
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "Sold by",
+  "target": "section",
+  "stylesheet": "vendor-apply.css",
+  "enabled_on": { "templates": ["product"] },
+  "settings": [
+    { "type": "text", "id": "label", "label": "Wording before the name", "default": "Sold by" },
+    {
+      "type": "checkbox",
+      "id": "link_to_page",
+      "label": "Link to the seller's page",
+      "default": true,
+      "info": "Their page lists who they are, how they ship and their returns."
+    }
+  ]
+}
+{% endschema %}
