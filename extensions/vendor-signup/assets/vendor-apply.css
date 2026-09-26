@@ -1,0 +1,115 @@
+/* Layout only. Colour, type and button styling come from the theme, so the form looks
+   like the shop it sits in rather than like us. Everything is scoped to .sv-apply. */
+
+.sv-apply {
+  padding: 2rem 1.25rem;
+}
+.sv-apply__inner {
+  margin-inline: auto;
+}
+.sv-apply--narrow .sv-apply__inner { max-width: 32rem; }
+.sv-apply--medium .sv-apply__inner { max-width: 44rem; }
+.sv-apply--wide .sv-apply__inner { max-width: 60rem; }
+
+/* A one-word shop name in a big heading will otherwise break mid-word on a narrow
+   column, so the size follows the viewport and long words wrap at a sensible point. */
+.sv-apply__heading {
+  margin: 0 0 0.75rem;
+  font-size: clamp(1.6rem, 4vw, 2.4rem);
+  line-height: 1.15;
+  overflow-wrap: break-word;
+}
+.sv-apply__intro {
+  margin-bottom: 1.75rem;
+  opacity: 0.85;
+}
+.sv-apply__intro > :first-child { margin-top: 0; }
+.sv-apply__intro > :last-child { margin-bottom: 0; }
+
+.sv-apply__form { text-align: left; }
+
+.sv-apply__field { margin-bottom: var(--sv-gap, 18px); }
+.sv-apply__field label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-weight: 600;
+}
+.sv-apply__field small {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.85em;
+  opacity: 0.7;
+}
+
+/* Fields borrow the theme's text colour at low opacity rather than using it outright:
+   a border the same weight as the words fights with them. */
+.sv-apply__field input,
+.sv-apply__field select,
+.sv-apply__field textarea {
+  width: 100%;
+  padding: 0.7rem 0.8rem;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid;
+  border-color: color-mix(in srgb, currentColor 35%, transparent);
+  border-radius: 0.4rem;
+}
+@supports not (color: color-mix(in srgb, red 50%, transparent)) {
+  .sv-apply__field input,
+  .sv-apply__field select,
+  .sv-apply__field textarea { border-color: rgba(128, 128, 128, 0.5); }
+}
+.sv-apply__field textarea { resize: vertical; }
+.sv-apply__field input:focus-visible,
+.sv-apply__field select:focus-visible,
+.sv-apply__field textarea:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}
+.sv-apply__field [aria-invalid="true"] { border-color: #b42318; }
+
+.sv-apply__row { display: grid; gap: 0 1rem; }
+@media (min-width: 40rem) {
+  .sv-apply__row { grid-template-columns: 1fr 1fr; }
+}
+
+.sv-apply__terms {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  margin: 1.25rem 0;
+}
+.sv-apply__terms input { margin-top: 0.25rem; }
+.sv-apply__terms label { font-weight: inherit; }
+
+.sv-apply__error {
+  margin: 0.35rem 0 0;
+  font-size: 0.875em;
+  color: #b42318;
+}
+.sv-apply__banner {
+  margin: 0 0 1.25rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid #b42318;
+  border-radius: 0.4rem;
+  color: #b42318;
+}
+
+/* Themes style .button; this only makes sure it's a sensible size if they don't. */
+.sv-apply__button {
+  min-width: 12rem;
+  padding: 0.8rem 1.5rem;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.sv-apply__button[disabled] { opacity: 0.6; cursor: default; }
+
+.sv-apply__done { padding: 1.5rem 0; }
+.sv-apply__done-heading { margin: 0 0 0.5rem; }
+
+.sv-apply__trap {
+  position: absolute !important;
+  left: -9999px !important;
+}

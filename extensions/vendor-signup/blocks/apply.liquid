@@ -1,0 +1,207 @@
+{%- comment -%}
+  "Sell with us": the application form, as a block the merchant places and styles themselves
+  in the theme editor. It posts to the app proxy at /apps/vendors/apply, which is the same
+  code that decides what an application is, so the block only has to draw the form.
+
+  Without JavaScript the form still submits normally and the proxy answers with its own
+  page. With JavaScript it answers in place, so nobody loses what they typed.
+{%- endcomment -%}
+
+{%- liquid
+  assign heading = block.settings.heading | default: 'Sell with us'
+  assign button_label = block.settings.button_label | default: 'Apply to sell'
+  assign width = block.settings.width | default: 'medium'
+-%}
+
+<div
+  class="sv-apply sv-apply--{{ width }} color-{{ block.settings.color_scheme }}"
+  data-sv-apply
+  style="--sv-gap: {{ block.settings.field_gap }}px; text-align: {{ block.settings.alignment }};"
+  {{ block.shopify_attributes }}
+>
+  <div class="sv-apply__inner">
+    {%- if heading != blank -%}
+      <h2 class="sv-apply__heading">{{ heading }}</h2>
+    {%- endif -%}
+
+    {%- if block.settings.intro != blank -%}
+      <div class="sv-apply__intro">{{ block.settings.intro }}</div>
+    {%- endif -%}
+
+    <div class="sv-apply__done" data-sv-done hidden>
+      <h3 class="sv-apply__done-heading">{{ block.settings.success_heading | default: 'Thanks — we have your application' }}</h3>
+      <p>{{ block.settings.success_text | default: "We'll read it and get back to you. If we take you on, you'll get an email with a link to set up your account." }}</p>
+    </div>
+
+    {%- comment -%}
+      A relative path: the block is on the shop's own domain, and so is the proxy.
+    {%- endcomment -%}
+    <form class="sv-apply__form" method="post" action="/apps/vendors/apply" data-sv-form>
+      <p class="sv-apply__banner" data-sv-banner hidden></p>
+
+      {%- comment -%} Not shown to anyone; only something filling in the whole page finds it. {%- endcomment -%}
+      <div class="sv-apply__trap" aria-hidden="true">
+        <label for="sv-website2">Leave this empty</label>
+        <input id="sv-website2" name="website2" type="text" tabindex="-1" autocomplete="off">
+      </div>
+      <input type="hidden" name="startedAt" data-sv-started>
+
+      <div class="sv-apply__field">
+        <label for="sv-name">{{ block.settings.label_name | default: 'What do you sell under?' }}</label>
+        <input id="sv-name" name="name" type="text" maxlength="80" required>
+        <small>{{ block.settings.hint_name | default: 'The name customers will see.' }}</small>
+        <p class="sv-apply__error" data-sv-error="name" hidden></p>
+      </div>
+
+      <div class="sv-apply__row">
+        <div class="sv-apply__field">
+          <label for="sv-contact">{{ block.settings.label_contact | default: 'Your name' }}</label>
+          <input id="sv-contact" name="contactName" type="text" maxlength="80" autocomplete="name" required>
+          <p class="sv-apply__error" data-sv-error="contactName" hidden></p>
+        </div>
+        <div class="sv-apply__field">
+          <label for="sv-email">{{ block.settings.label_email | default: 'Email' }}</label>
+          <input id="sv-email" name="email" type="email" maxlength="120" autocomplete="email" required>
+          <p class="sv-apply__error" data-sv-error="email" hidden></p>
+        </div>
+      </div>
+
+      <div class="sv-apply__row">
+        {%- if block.settings.ask_phone -%}
+          <div class="sv-apply__field">
+            <label for="sv-phone">{{ block.settings.label_phone | default: 'Phone (optional)' }}</label>
+            <input id="sv-phone" name="phone" type="tel" maxlength="30" autocomplete="tel">
+            <p class="sv-apply__error" data-sv-error="phone" hidden></p>
+          </div>
+        {%- endif -%}
+        <div class="sv-apply__field">
+          <label for="sv-country">{{ block.settings.label_country | default: 'Where are you based?' }}</label>
+          <select id="sv-country" name="countryCode" required>
+            <option value="">{{ block.settings.country_placeholder | default: 'Choose a country' }}</option>
+            {%- render 'vendor_apply_countries' -%}
+          </select>
+          <p class="sv-apply__error" data-sv-error="countryCode" hidden></p>
+        </div>
+      </div>
+
+      <div class="sv-apply__field">
+        <label for="sv-sells">{{ block.settings.label_sells | default: 'What would you like to sell?' }}</label>
+        <textarea id="sv-sells" name="sells" rows="3" maxlength="500" required></textarea>
+        <small>{{ block.settings.hint_sells | default: 'A line or two is plenty.' }}</small>
+        <p class="sv-apply__error" data-sv-error="sells" hidden></p>
+      </div>
+
+      {%- if block.settings.ask_catalogue or block.settings.ask_website -%}
+        <div class="sv-apply__row">
+          {%- if block.settings.ask_catalogue -%}
+            <div class="sv-apply__field">
+              <label for="sv-size">{{ block.settings.label_catalogue | default: 'Roughly how many products? (optional)' }}</label>
+              <select id="sv-size" name="catalogueSize">
+                <option value="">Not sure yet</option>
+                <option value="1-10">1 to 10 products</option>
+                <option value="11-50">11 to 50</option>
+                <option value="51-200">51 to 200</option>
+                <option value="200+">More than 200</option>
+              </select>
+              <p class="sv-apply__error" data-sv-error="catalogueSize" hidden></p>
+            </div>
+          {%- endif -%}
+          {%- if block.settings.ask_website -%}
+            <div class="sv-apply__field">
+              <label for="sv-website">{{ block.settings.label_website | default: 'Website or social page (optional)' }}</label>
+              <input id="sv-website" name="website" type="url" inputmode="url" maxlength="200" placeholder="https://">
+              <p class="sv-apply__error" data-sv-error="website" hidden></p>
+            </div>
+          {%- endif -%}
+        </div>
+      {%- endif -%}
+
+      {%- if block.settings.ask_message -%}
+        <div class="sv-apply__field">
+          <label for="sv-message">{{ block.settings.label_message | default: 'Anything else (optional)' }}</label>
+          <textarea id="sv-message" name="message" rows="3" maxlength="1000"></textarea>
+          <p class="sv-apply__error" data-sv-error="message" hidden></p>
+        </div>
+      {%- endif -%}
+
+      <div class="sv-apply__terms">
+        <input id="sv-terms" name="agreedTerms" type="checkbox" value="on">
+        <label for="sv-terms">
+          {%- if block.settings.terms_url != blank -%}
+            {{ block.settings.terms_text | default: 'I accept the seller terms' }}
+            (<a href="{{ block.settings.terms_url }}" target="_blank" rel="noreferrer">{{ block.settings.terms_link_label | default: 'read them' }}</a>)
+          {%- else -%}
+            {{ block.settings.terms_text | default: 'I agree to being contacted about selling here.' }}
+          {%- endif -%}
+        </label>
+      </div>
+      <p class="sv-apply__error" data-sv-error="agreedTerms" hidden></p>
+
+      <button type="submit" class="sv-apply__button button" data-sv-submit>{{ button_label }}</button>
+    </form>
+  </div>
+</div>
+
+{% schema %}
+{
+  "name": "Sell with us",
+  "target": "section",
+  "stylesheet": "vendor-apply.css",
+  "javascript": "vendor-apply.js",
+  "settings": [
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Sell with us" },
+    {
+      "type": "richtext",
+      "id": "intro",
+      "label": "Intro",
+      "default": "<p>Apply to sell your products through our shop. Tell us who you are and what you make, and we'll be in touch.</p>"
+    },
+    { "type": "text", "id": "button_label", "label": "Button", "default": "Apply to sell" },
+    { "type": "header", "content": "Layout" },
+    {
+      "type": "select",
+      "id": "width",
+      "label": "Width",
+      "options": [
+        { "value": "narrow", "label": "Narrow" },
+        { "value": "medium", "label": "Medium" },
+        { "value": "wide", "label": "Wide" }
+      ],
+      "default": "medium"
+    },
+    { "type": "text_alignment", "id": "alignment", "label": "Heading alignment", "default": "left" },
+    { "type": "range", "id": "field_gap", "label": "Space between fields", "min": 8, "max": 32, "step": 2, "unit": "px", "default": 18 },
+    { "type": "color_scheme", "id": "color_scheme", "label": "Colours", "default": "scheme-1" },
+    { "type": "header", "content": "What to ask for" },
+    { "type": "checkbox", "id": "ask_phone", "label": "Phone number", "default": true },
+    { "type": "checkbox", "id": "ask_website", "label": "Website or social page", "default": true },
+    { "type": "checkbox", "id": "ask_catalogue", "label": "Roughly how many products", "default": true },
+    { "type": "checkbox", "id": "ask_message", "label": "Anything else", "default": true },
+    { "type": "header", "content": "Terms" },
+    { "type": "url", "id": "terms_url", "label": "Link to your seller terms" },
+    { "type": "text", "id": "terms_text", "label": "Terms wording", "default": "I accept the seller terms" },
+    { "type": "text", "id": "terms_link_label", "label": "Link wording", "default": "read them" },
+    { "type": "header", "content": "Field labels" },
+    { "type": "text", "id": "label_name", "label": "Selling name", "default": "What do you sell under?" },
+    { "type": "text", "id": "hint_name", "label": "Selling name hint", "default": "The name customers will see." },
+    { "type": "text", "id": "label_contact", "label": "Their name", "default": "Your name" },
+    { "type": "text", "id": "label_email", "label": "Email", "default": "Email" },
+    { "type": "text", "id": "label_phone", "label": "Phone", "default": "Phone (optional)" },
+    { "type": "text", "id": "label_country", "label": "Country", "default": "Where are you based?" },
+    { "type": "text", "id": "country_placeholder", "label": "Country placeholder", "default": "Choose a country" },
+    { "type": "text", "id": "label_sells", "label": "What they sell", "default": "What would you like to sell?" },
+    { "type": "text", "id": "hint_sells", "label": "What they sell hint", "default": "A line or two is plenty." },
+    { "type": "text", "id": "label_catalogue", "label": "How many products", "default": "Roughly how many products? (optional)" },
+    { "type": "text", "id": "label_website", "label": "Website", "default": "Website or social page (optional)" },
+    { "type": "text", "id": "label_message", "label": "Anything else", "default": "Anything else (optional)" },
+    { "type": "header", "content": "After they apply" },
+    { "type": "text", "id": "success_heading", "label": "Heading", "default": "Thanks — we have your application" },
+    {
+      "type": "textarea",
+      "id": "success_text",
+      "label": "Message",
+      "default": "We'll read it and get back to you. If we take you on, you'll get an email with a link to set up your account."
+    }
+  ]
+}
+{% endschema %}

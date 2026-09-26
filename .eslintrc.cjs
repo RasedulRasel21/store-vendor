@@ -19,8 +19,13 @@ module.exports = {
     commonjs: true,
     es6: true,
   },
-  // shopify.d.ts files are written by the CLI, so they're not ours to lint.
-  ignorePatterns: ["!**/.server", "!**/.client", "extensions/**/shopify.d.ts"],
+  // shopify.d.ts files and extension bundles are written by the CLI, not by us.
+  ignorePatterns: [
+    "!**/.server",
+    "!**/.client",
+    "extensions/**/shopify.d.ts",
+    "extensions/**/dist/**",
+  ],
 
   // Base config
   extends: ["eslint:recommended"],
@@ -92,6 +97,14 @@ module.exports = {
       files: ["extensions/**/*.{js,jsx}"],
       rules: {
         "react/prop-types": "off",
+      },
+    },
+
+    // Function tests run under Node, so they get Node's globals.
+    {
+      files: ["extensions/**/tests/**/*.{js,jsx}"],
+      env: {
+        node: true,
       },
     },
 

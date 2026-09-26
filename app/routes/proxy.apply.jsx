@@ -40,12 +40,23 @@ export const action = async ({ request }) => {
     website2: read("website2"),
   };
 
+  // The theme block sends the form in the background and draws the answer itself, so it
+  // asks for JSON. A plain form post gets a whole page back, as before.
+  const wantsJson =
+    read("format") === "json" || (request.headers.get("accept") ?? "").includes("application/json");
+
   const startedAt = Number(read("startedAt"));
   const result = await submitApplicationForShop(session.shop, values, {
     // Shopify passes the visitor's address on, and it's only ever hashed from here.
     ip: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
     elapsedMs: Number.isFinite(startedAt) && startedAt > 0 ? Date.now() - startedAt : undefined,
   });
+
+  if (wantsJson) {
+    if (result.errors) return Response.json({ errors: result.errors }, { status: 422 });
+    if (result.error) return Response.json({ error: result.error }, { status: result.closed ? 409 : 400 });
+    return Response.json({ ok: true });
+  }
 
   if (result.errors) return liquid(page(form, { errors: result.errors, values }));
   if (result.error) return liquid(page(form, { values, message: result.error }));
