@@ -473,3 +473,52 @@ export async function rejectProductSubmission(shop, id, note, actor) {
 
   return { ok: true };
 }
+
+// Approving several at once. Each one still goes through the same checks and the same
+// Shopify calls as approving it on its own — this only saves the clicking, it doesn't
+// take any shortcuts.
+//
+// They run one after another rather than together: each approval creates a product and
+// uploads its images, and firing twenty of those at Shopify at once is how you meet a
+// rate limit. The batch is capped for the same reason, so a request can't run past the
+// time it's allowed.
+export const BULK_APPROVE_LIMIT = 10;
+
+export async function approveMany(admin, shop, ids, actor) {
+  const wanted = [...new Set((ids ?? []).filter(Boolean))];
+  if (!wanted.length) return { error: "Tick the products you want to approve" };
+
+  const batch = wanted.slice(0, BULK_APPROVE_LIMIT);
+  const waiting = wanted.length - batch.length;
+
+  const rows = await db.productSubmission.findMany({
+    where: { id: { in: batch }, shop },
+    select: { id: true, title: true, pendingSubmittedAt: true },
+  });
+  const byId = new Map(rows.map((row) => [row.id, row]));
+
+  const approved = [];
+  const failed = [];
+
+  for (const id of batch) {
+    const row = byId.get(id);
+    if (!row) {
+      failed.push({ title: "A product that's no longer there", error: "It may have been reviewed already." });
+      continue;
+    }
+
+    try {
+      const result = row.pendingSubmittedAt
+        ? await approveProductEdit(admin, shop, id, actor)
+        : await approveProductSubmission(admin, shop, id, actor);
+
+      if (result.error) failed.push({ title: row.title, error: result.error });
+      else approved.push({ title: row.title, warning: result.warning ?? null });
+    } catch (error) {
+      console.error(`Bulk approve failed for ${id}`, error);
+      failed.push({ title: row.title, error: "Shopify couldn't be reached. Try this one on its own." });
+    }
+  }
+
+  return { approved, failed, waiting };
+}
