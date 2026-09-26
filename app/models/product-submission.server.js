@@ -42,6 +42,16 @@ const CREATE_PRODUCT = `#graphql
     }
   }`;
 
+const HANDLE_TAKEN = `#graphql
+  query HandleTaken($query: String!) {
+    products(first: 1, query: $query) {
+      nodes {
+        id
+        handle
+      }
+    }
+  }`;
+
 const PUBLISH_PRODUCT = `#graphql
   mutation PublishVendorProduct($id: ID!, $input: [PublicationInput!]!) {
     publishablePublish(id: $id, input: $input) {
@@ -101,6 +111,36 @@ export function submissionVariants(submission) {
       submission,
     ),
   ];
+}
+
+// Two vendors selling "Blue Mug" is ordinary in a marketplace; two products fighting over
+// the same address in the shop is not. Shopify's handles are unique across a whole store,
+// so before a product is created its handle is checked, and a taken one gets the vendor's
+// name added rather than failing the approval or silently becoming blue-mug-1.
+async function freeHandle(admin, wanted, vendor, keepProductId) {
+  const base = String(wanted ?? "").trim();
+  if (!base) return null;
+
+  const taken = async (handle) => {
+    const response = await admin.graphql(HANDLE_TAKEN, { variables: { query: `handle:'${handle.replace(/'/g, "")}'` } });
+    const { data } = await response.json();
+    const found = data?.products?.nodes?.find((node) => node.handle === handle);
+    // A product editing itself hasn't taken its own handle.
+    return Boolean(found) && found.id !== keepProductId;
+  };
+
+  if (!(await taken(base))) return base;
+
+  const withVendor = `${base}-${vendor.handle}`.slice(0, 255);
+  if (!(await taken(withVendor))) return withVendor;
+
+  for (let n = 2; n <= 20; n += 1) {
+    const candidate = `${withVendor}-${n}`;
+    if (!(await taken(candidate))) return candidate;
+  }
+
+  // Out of ideas: let Shopify pick one from the title rather than refuse to approve.
+  return null;
 }
 
 // Everything productSet needs for a product, shared by new products and approved edits.
@@ -278,9 +318,11 @@ export async function approveProductSubmission(admin, shop, id, actor) {
     // Collections deleted (or turned smart) since the vendor picked them are skipped.
     const collections = await getShopCollections(shop, submission.collectionIds);
 
+    const handle = await freeHandle(admin, submission.handle, submission.vendor, null);
+
     const response = await admin.graphql(CREATE_PRODUCT, {
       variables: {
-        input: productInput(submission, submission.vendor, {
+        input: productInput({ ...submission, handle }, submission.vendor, {
           options,
           variants,
           collections,
@@ -371,11 +413,18 @@ export async function approveProductEdit(admin, shop, id, actor) {
     const locationId = context?.location?.id;
     const collections = await getShopCollections(shop, changes.collectionIds ?? []);
 
+    const editHandle = await freeHandle(admin, changes.handle, submission.vendor, submission.productId);
+
     const response = await admin.graphql(CREATE_PRODUCT, {
       variables: {
         input: {
           id: submission.productId,
-          ...productInput(changes, submission.vendor, { options, variants, collections, locationId }),
+          ...productInput({ ...changes, handle: editHandle }, submission.vendor, {
+            options,
+            variants,
+            collections,
+            locationId,
+          }),
         },
       },
     });
@@ -521,4 +570,31 @@ export async function approveMany(admin, shop, ids, actor) {
   }
 
   return { approved, failed, waiting };
+}
+
+
+// Another vendor selling the same thing under the same name. Not an error — a marketplace
+// with ten sellers of "Blue Mug" is a normal marketplace — but the merchant should know
+// before they approve, because it's their storefront that ends up with two of them.
+export async function sameTitleElsewhere(shop, submission) {
+  const title = String(submission?.title ?? "").trim();
+  if (!title) return [];
+
+  const others = await db.productSubmission.findMany({
+    where: {
+      shop,
+      id: { not: submission.id },
+      vendorId: { not: submission.vendorId },
+      status: { in: ["PENDING", "APPROVED"] },
+      title: { equals: title, mode: "insensitive" },
+    },
+    take: 5,
+    select: { id: true, status: true, vendor: { select: { name: true } } },
+  });
+
+  return others.map((other) => ({
+    id: other.id,
+    vendorName: other.vendor.name,
+    live: other.status === "APPROVED",
+  }));
 }

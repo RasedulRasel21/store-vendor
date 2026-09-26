@@ -11,6 +11,7 @@ import {
   rejectProductEdit,
   rejectProductSubmission,
   reviewedProduct,
+  sameTitleElsewhere,
   submissionOptions,
   submissionVariants,
 } from "../models/product-submission.server";
@@ -68,12 +69,15 @@ export const loader = async ({ request, params }) => {
   const { problems } = await checkProduct(session.shop, submission.vendorId, changes, {
     submissionId: submission.id,
   });
+  // Someone else already selling this under the same name.
+  const alsoSelling = await sameTitleElsewhere(session.shop, { ...submission, title: changes.title });
 
   return {
     currencyCode: settings.currencyCode ?? "USD",
     collections: collections.map((collection) => collection.title),
     diff,
     ruleProblems: problems,
+    alsoSelling,
     submission: {
       id: submission.id,
       isEdit,
@@ -127,7 +131,7 @@ export const action = async ({ request, params }) => {
 };
 
 export default function ReviewProduct() {
-  const { submission, currencyCode, collections, diff, ruleProblems } = useLoaderData();
+  const { submission, currencyCode, collections, diff, ruleProblems, alsoSelling } = useLoaderData();
   // Worth shouting about: a price that moved a fifth or more.
   const bigPriceMove = Boolean(diff?.biggestPriceMove) && Math.abs(diff.biggestPriceMove) >= 20;
   const fetcher = useFetcher();
@@ -279,6 +283,16 @@ export default function ReviewProduct() {
             </s-stack>
           )}
         </s-section>
+      )}
+
+      {alsoSelling.length > 0 && isPending && (
+        <s-banner tone="info" heading="Another vendor sells this too">
+          <s-paragraph>
+            {`${alsoSelling
+              .map((other) => `${other.vendorName}${other.live ? "" : " (waiting for you)"}`)
+              .join(", ")} ${alsoSelling.length === 1 ? "has" : "have"} a product with the same name. Approving this one puts both in your store.`}
+          </s-paragraph>
+        </s-banner>
       )}
 
       {ruleProblems.length > 0 && isPending && (
