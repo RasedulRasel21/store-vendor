@@ -11,6 +11,7 @@ import {
   updateVendorCommission,
   updateVendorFulfillment,
   updateVendorNotes,
+  updateVendorPermissions,
 } from "../models/vendor.server";
 import { getShopCurrency, getShopSettings } from "../models/settings.server";
 import { syncCodRules } from "../models/cod-rules.server";
@@ -149,6 +150,12 @@ export const loader = async ({ request, params }) => {
       codEnabled: vendor.codEnabled,
       codMaxOrderValue:
         vendor.codMaxOrderValue === null ? "" : String(vendor.codMaxOrderValue),
+      permissions: {
+        canCreateProducts: vendor.canCreateProducts,
+        autoApproveProducts: vendor.autoApproveProducts,
+        canSeeCustomerContact: vendor.canSeeCustomerContact,
+        productLimit: String(vendor.productLimit),
+      },
       payout: payoutRows(vendor.payoutMethod, vendor.payoutDetails),
       payoutUpdatedAt: formatDate(vendor.payoutUpdatedAt),
       // Only the last four digits of the tax ID ever leave the server.
@@ -273,6 +280,20 @@ export const action = async ({ request, params }) => {
         inviteToken: result.inviteToken,
         inviteUrl: inviteUrl(result.inviteToken),
       };
+    }
+    case "permissions": {
+      const result = await updateVendorPermissions(
+        session.shop,
+        params.id,
+        {
+          canCreateProducts: formData.get("canCreateProducts") === "on",
+          autoApproveProducts: formData.get("autoApproveProducts") === "on",
+          canSeeCustomerContact: formData.get("canSeeCustomerContact") === "on",
+          productLimit: String(formData.get("productLimit") ?? ""),
+        },
+        ACTOR,
+      );
+      return { intent, error: result.error ?? null, errors: result.errors ?? null, saved: Boolean(result.saved) };
     }
     case "fulfillment": {
       const result = await updateVendorFulfillment(
@@ -848,6 +869,56 @@ export default function VendorDetail() {
             <s-stack direction="inline">
               <s-button type="submit" loading={busyIntent === "commission"}>
                 Save commission
+              </s-button>
+            </s-stack>
+          </s-stack>
+        </fetcher.Form>
+      </s-section>
+
+      <s-section heading="What this vendor can do">
+        <fetcher.Form method="post">
+          <input type="hidden" name="intent" value="permissions" />
+          <s-stack direction="block" gap="base">
+            <s-paragraph color="subdued">
+              Applies to this vendor only. Everyone else follows your usual rules.
+            </s-paragraph>
+
+            <s-checkbox
+              label="Add new products"
+              name="canCreateProducts"
+              defaultChecked={vendor.permissions.canCreateProducts}
+              details="Off: they can still edit and restock what they already have."
+            ></s-checkbox>
+
+            <s-checkbox
+              label="Put new products straight into the store"
+              name="autoApproveProducts"
+              defaultChecked={vendor.permissions.autoApproveProducts}
+              details="Skips your approval for brand-new products. Changes to something already on sale still come to you."
+            ></s-checkbox>
+
+            <s-checkbox
+              label="See the customer's phone number and email"
+              name="canSeeCustomerContact"
+              defaultChecked={vendor.permissions.canSeeCustomerContact}
+              details="Off: they still get the delivery address, so they can post the order."
+            ></s-checkbox>
+
+            <s-grid gridTemplateColumns="minmax(0,16rem)" gap="base">
+              <s-number-field
+                label="Most products for this vendor"
+                name="productLimit"
+                inputMode="numeric"
+                min={0}
+                defaultValue={vendor.permissions.productLimit}
+                details="0 uses your store-wide limit."
+                error={result?.intent === "permissions" ? result.errors?.productLimit : undefined}
+              ></s-number-field>
+            </s-grid>
+
+            <s-stack direction="inline">
+              <s-button type="submit" loading={busyIntent === "permissions"}>
+                Save
               </s-button>
             </s-stack>
           </s-stack>

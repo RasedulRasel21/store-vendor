@@ -719,6 +719,17 @@ model Vendor {
   // Null means no maximum order value for cash on delivery.
   codMaxOrderValue Decimal?     @db.Decimal(12, 2)
 
+  // What this vendor is allowed to do. Set per vendor by the merchant, so a shop can
+  // trust someone it knows without loosening the rules for everyone.
+  canCreateProducts     Boolean @default(true)
+  // Their products go straight into the store without waiting to be reviewed.
+  autoApproveProducts   Boolean @default(false)
+  // Whether they see a customer's phone number and email, as opposed to the address they
+  // need in order to post the parcel.
+  canSeeCustomerContact Boolean @default(true)
+  // Overrides the shop-wide cap; 0 means use whatever the shop says.
+  productLimit          Int     @default(0)
+
   // How the vendor appears to customers on their own page in the store. Vendors write
   // these in the portal; they're plain text, never markup, and are escaped where shown.
   logoUrl        String?

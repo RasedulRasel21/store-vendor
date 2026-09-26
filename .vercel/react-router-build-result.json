@@ -10,6 +10,7 @@
       }
     },
     "routeIdToServerBundleId": {
+      "routes/api.portal.vendor-permissions": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/webhooks.fulfillments.create": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/webhooks.app.scopes_update": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/webhooks.orders.cancelled": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
@@ -64,6 +65,15 @@
         "file": "app/root.jsx",
         "path": "",
         "config": {}
+      },
+      "routes/api.portal.vendor-permissions": {
+        "id": "routes/api.portal.vendor-permissions",
+        "parentId": "root",
+        "file": "app/routes/api.portal.vendor-permissions.jsx",
+        "path": "api/portal/vendor-permissions",
+        "config": {
+          "runtime": "nodejs"
+        }
       },
       "routes/webhooks.fulfillments.create": {
         "id": "routes/webhooks.fulfillments.create",
@@ -522,6 +532,12 @@
         "file": "root.jsx",
         "path": ""
       },
+      "routes/api.portal.vendor-permissions": {
+        "id": "routes/api.portal.vendor-permissions",
+        "parentId": "root",
+        "file": "routes/api.portal.vendor-permissions.jsx",
+        "path": "api/portal/vendor-permissions"
+      },
       "routes/webhooks.fulfillments.create": {
         "id": "routes/webhooks.fulfillments.create",
         "parentId": "root",
@@ -832,6 +848,11 @@
         "path": "",
         "file": "root.jsx",
         "children": [
+          {
+            "id": "routes/api.portal.vendor-permissions",
+            "file": "routes/api.portal.vendor-permissions.jsx",
+            "path": "api/portal/vendor-permissions"
+          },
           {
             "id": "routes/webhooks.fulfillments.create",
             "file": "routes/webhooks.fulfillments.create.jsx",

@@ -98,8 +98,15 @@ export function breaksRules(rules, product, { productCount } = {}) {
 // measures up. `submissionId` is left out when the product is new, so it isn't counted
 // against the cap as well as itself.
 export async function checkProduct(shop, vendorId, product, { submissionId } = {}) {
-  const settings = await db.shopSettings.findUnique({ where: { shop } });
+  const [settings, vendor] = await Promise.all([
+    db.shopSettings.findUnique({ where: { shop } }),
+    db.vendor.findFirst({ where: { id: vendorId, shop }, select: { productLimit: true } }),
+  ]);
+
   const rules = listingRules(settings);
+  // A vendor's own limit wins over the shop's, in either direction: a shop can allow a
+  // trusted seller more, or hold a new one to fewer.
+  if (vendor?.productLimit) rules.maxProducts = vendor.productLimit;
   if (!hasAnyRule(rules)) return { problems: [] };
 
   let productCount;

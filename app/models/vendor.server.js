@@ -362,3 +362,31 @@ export async function updateVendorNotes(shop, id, notes, actor) {
 
   return { ok: true };
 }
+
+// What a vendor is allowed to do. The merchant sets these per vendor, so a shop can
+// trust someone it knows without loosening its rules for everyone.
+export async function updateVendorPermissions(shop, id, input, actor) {
+  const vendor = await db.vendor.findFirst({ where: { id, shop }, select: { id: true } });
+  if (!vendor) return { error: "Vendor not found" };
+
+  const limit = Math.trunc(Number(input.productLimit));
+  if (input.productLimit !== "" && input.productLimit !== undefined && !Number.isFinite(limit)) {
+    return { errors: { productLimit: "Use a number, or 0 for the store's own limit" } };
+  }
+
+  const data = {
+    canCreateProducts: Boolean(input.canCreateProducts),
+    autoApproveProducts: Boolean(input.autoApproveProducts),
+    canSeeCustomerContact: Boolean(input.canSeeCustomerContact),
+    productLimit: Number.isFinite(limit) && limit > 0 ? Math.min(limit, 10_000) : 0,
+  };
+
+  await db.$transaction([
+    db.vendor.update({ where: { id }, data }),
+    db.vendorActivity.create({
+      data: { vendorId: id, action: "vendor.permissions_updated", actor, details: data },
+    }),
+  ]);
+
+  return { saved: true };
+}
