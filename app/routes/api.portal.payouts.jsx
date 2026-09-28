@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import { notifyMerchantPayoutRequested } from "../models/notifications.server";
+import { formatMoney } from "../utils/money";
 import db from "../db.server";
 import { holdLabel, holdOf, vendorBalance } from "../models/ledger.server";
 import { payoutChangeHoldUntil, payoutMinimum } from "../models/payout.server";
@@ -95,7 +97,7 @@ export const action = async ({ request }) => {
 
     const actor = text(body?.actor, 100) || "vendor";
     // Nothing is set aside yet: the merchant accepts, and only then does it leave the balance.
-    await db.$transaction([
+    const [requested] = await db.$transaction([
       db.payout.create({
         data: {
           shop: vendor.shop,
@@ -116,6 +118,13 @@ export const action = async ({ request }) => {
         },
       }),
     ]);
+
+    // The vendor is now waiting on the merchant, who has no reason to be looking.
+    const asking = await db.vendor.findUnique({ where: { id: vendor.id }, select: { name: true } });
+    await notifyMerchantPayoutRequested(vendor.shop, requested.id, {
+      vendorName: asking?.name ?? "A vendor",
+      amount: formatMoney(current.available, current.currencyCode),
+    });
 
     return Response.json({ ok: true, amount: current.available, currencyCode: current.currencyCode });
   }

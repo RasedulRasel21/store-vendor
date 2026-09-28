@@ -1,4 +1,5 @@
 import db from "../db.server";
+import { notifyChangeApproved, notifyChangeRejected } from "./notifications.server";
 import { CHANGE_REQUEST_STATUSES } from "../utils/vendor-display";
 
 export async function listChangeRequests(shop, { status }) {
@@ -60,6 +61,8 @@ export async function approveChangeRequest(shop, id, actor) {
     }),
   ]);
 
+  await notifyChangeApproved(shop, request.vendorId, request.id);
+
   return { ok: true };
 }
 
@@ -91,6 +94,8 @@ export async function rejectChangeRequest(shop, id, note, actor) {
       details: { requestId: request.id, reason: trimmed },
     },
   });
+
+  await notifyChangeRejected(shop, request.vendorId, request.id, trimmed);
 
   return { ok: true };
 }

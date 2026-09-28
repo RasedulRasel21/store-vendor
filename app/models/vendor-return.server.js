@@ -1,3 +1,4 @@
+import { notifyReturnRequested } from "./notifications.server";
 import db from "../db.server";
 import { getShopSettings } from "./settings.server";
 
@@ -104,6 +105,12 @@ export async function syncReturn(admin, shop, returnGid) {
           },
         },
       });
+
+      // Only the first time, and only for a request: a status moving on afterwards is
+      // something the vendor watches in the portal, not something to email about.
+      if (!existing) {
+        await notifyReturnRequested(shop, vendorOrder.id, shopifyReturn.name ?? null);
+      }
     }
   }
 

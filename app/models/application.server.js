@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { notifyMerchantApplication } from "./notifications.server";
 import db from "../db.server";
 import { slugify, uniqueHandle } from "./vendor.server";
 import { COUNTRY_NAMES } from "../utils/countries";
@@ -205,6 +206,7 @@ async function record(settings, input, { ip, elapsedMs } = {}) {
           },
         },
       });
+      await notifyMerchantApplication(settings.shop, existing.id, values.name);
       return { ok: true, reapplied: true };
     }
 
@@ -250,6 +252,10 @@ async function record(settings, input, { ip, elapsedMs } = {}) {
     },
     select: { id: true },
   });
+
+  // Someone applying is waiting on an answer, and the merchant has no reason to be looking
+  // at the app when it happens.
+  await notifyMerchantApplication(settings.shop, vendor.id, values.name);
 
   return { ok: true, vendorId: vendor.id };
 }

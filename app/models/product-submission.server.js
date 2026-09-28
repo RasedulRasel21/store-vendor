@@ -2,6 +2,7 @@ import db from "../db.server";
 import { getShopCollections } from "./collection.server";
 import { reportError } from "./error-report.server";
 import { attachProductToShipping } from "./delivery-profile.server";
+import { notifyProductApproved, notifyProductRejected } from "./notifications.server";
 import { sanitizeDescription } from "../utils/sanitize-description.server";
 import { SUBMISSION_REVIEW_STATUSES } from "../utils/vendor-display";
 
@@ -386,6 +387,11 @@ export async function approveProductSubmission(admin, shop, id, actor) {
   // without this the vendor's own rates wouldn't apply to what they just had approved.
   await putInVendorProfile(admin, shop, submission.vendorId, productId);
 
+  await notifyProductApproved(shop, submission.vendorId, {
+    title: submission.title,
+    submissionId: submission.id,
+  });
+
   return { productId, warning };
 }
 
@@ -498,6 +504,12 @@ export async function approveProductEdit(admin, shop, id, actor) {
   // An edit can add a variant, and a new variant starts in the store's own profile.
   await putInVendorProfile(admin, shop, submission.vendorId, submission.productId);
 
+  await notifyProductApproved(shop, submission.vendorId, {
+    title: changes.title ?? submission.title,
+    submissionId: submission.id,
+    edit: true,
+  });
+
   return { ok: true };
 }
 
@@ -528,6 +540,13 @@ export async function rejectProductEdit(shop, id, note, actor) {
     }),
   ]);
 
+  await notifyProductRejected(shop, submission.vendorId, {
+    title: submission.title,
+    submissionId: submission.id,
+    note: trimmed,
+    edit: true,
+  });
+
   return { ok: true };
 }
 
@@ -556,6 +575,12 @@ export async function rejectProductSubmission(shop, id, note, actor) {
       },
     }),
   ]);
+
+  await notifyProductRejected(shop, submission.vendorId, {
+    title: submission.title,
+    submissionId: submission.id,
+    note: trimmed,
+  });
 
   return { ok: true };
 }

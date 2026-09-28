@@ -842,6 +842,10 @@ model VendorUser {
   status          VendorUserStatus @default(INVITED)
   inviteTokenHash String?          @unique
   inviteExpiresAt DateTime?
+  // A password reset the portal has sent out. Only the hash is kept, the same way as the
+  // invite, so a look at the database is no help to anyone.
+  resetTokenHash  String?          @unique
+  resetExpiresAt  DateTime?
   // Set by the vendor portal when the invite is accepted.
   passwordHash    String?
   // Portal sign-in lockout: reset on success, locked for a while after repeated failures.

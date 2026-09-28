@@ -1,3 +1,4 @@
+import { notifyNewOrder, notifyOrderCancelled } from "./notifications.server";
 import db from "../db.server";
 import { unauthenticated } from "../shopify.server";
 import { allowedCarrierNames } from "./carrier.server";
@@ -361,6 +362,7 @@ export async function splitOrder(admin, shop, orderGid) {
   );
 
   const touched = [];
+  const fresh = [];
   for (const { vendor, lines } of groups.values()) {
     const subtotal = round2(lines.reduce((sum, line) => sum + Number(line.subtotal), 0));
     const commission = round2(lines.reduce((sum, line) => sum + Number(line.commission), 0));
@@ -452,7 +454,7 @@ export async function splitOrder(admin, shop, orderGid) {
       refundedAt: refunded > 0 ? new Date() : null,
     };
 
-    const vendorOrderId = await db.$transaction(async (tx) => {
+    const split = await db.$transaction(async (tx) => {
       const existing = await tx.vendorOrder.findUnique({
         where: { shop_orderId_vendorId: { shop, orderId: order.id, vendorId: vendor.id } },
         select: {
@@ -516,7 +518,7 @@ export async function splitOrder(admin, shop, orderGid) {
             },
           });
         }
-        return existing.id;
+        return { id: existing.id, created: false };
       }
 
       const created = await tx.vendorOrder.create({
@@ -530,15 +532,20 @@ export async function splitOrder(admin, shop, orderGid) {
           details: { orderName: order.name, earnings: record.earnings },
         },
       });
-      return created.id;
+      return { id: created.id, created: true };
     });
 
     // Outside the order's transaction: the ledger takes its own lock per vendor order.
-    touched.push(vendorOrderId);
+    touched.push(split.id);
+    if (split.created) fresh.push(split.id);
   }
 
   await refreshShipmentTracking(order);
   for (const vendorOrderId of touched) await syncOrderLedger(vendorOrderId);
+
+  // Only the ones that are new to the vendor. A re-read of an order they have already been
+  // told about must not tell them again.
+  for (const vendorOrderId of fresh) await notifyNewOrder(shop, vendorOrderId);
 
   return { vendorOrders: groups.size };
 }
@@ -634,6 +641,13 @@ export async function updatePaymentStatus(shop, orderGid, financialStatus) {
 }
 
 export async function cancelVendorOrders(shop, orderGid) {
+  // Read before the update: the webhook can arrive twice, and a vendor shouldn't be told
+  // twice that the same order is off.
+  const newlyCancelled = await db.vendorOrder.findMany({
+    where: { shop, orderId: orderGid, status: { not: "CANCELLED" } },
+    select: { id: true },
+  });
+
   await db.vendorOrder.updateMany({
     where: { shop, orderId: orderGid, status: { not: "CANCELLED" } },
     data: { status: "CANCELLED", cancelledAt: new Date() },
@@ -642,6 +656,9 @@ export async function cancelVendorOrders(shop, orderGid) {
   // Whatever the vendor was owed on it comes back off.
   const cancelled = await db.vendorOrder.findMany({ where: { shop, orderId: orderGid }, select: { id: true } });
   for (const { id } of cancelled) await syncOrderLedger(id);
+
+  // A vendor about to pack a parcel needs to hear this before they post it.
+  for (const { id } of newlyCancelled) await notifyOrderCancelled(shop, id);
 }
 
 // Where a vendor order stands: everything refunded, fully shipped, partly shipped, or

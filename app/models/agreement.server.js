@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { notifyAgreementPublished } from "./notifications.server";
 import db from "../db.server";
 
 // The terms a store asks its vendors to agree to.
@@ -76,6 +77,10 @@ export async function publishAgreement(shop) {
   if (!draft.body.trim()) return { error: "Write the terms first" };
 
   await db.vendorAgreement.update({ where: { id: draft.id }, data: { publishedAt: new Date() } });
+
+  // Everyone selling has to sign it before they can carry on, so everyone selling is told.
+  await notifyAgreementPublished(shop, draft.id);
+
   return { published: true, version: draft.version };
 }
 

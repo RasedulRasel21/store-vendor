@@ -2,6 +2,13 @@ import crypto from "node:crypto";
 import db from "../db.server";
 import { parseCommission } from "../utils/commission";
 import { SHIPPING_MODES, VENDOR_STATUSES } from "../utils/vendor-display";
+import {
+  notifyVendorApproved,
+  notifyVendorInvited,
+  notifyVendorPaused,
+  notifyVendorReactivated,
+  notifyVendorRejected,
+} from "./notifications.server";
 
 const INVITE_TTL_DAYS = 7;
 
@@ -214,11 +221,26 @@ export async function changeVendorStatus(shop, id, action, { reason, actor }) {
     },
   });
 
+  // Being approved, turned down or paused is news the vendor should hear from the store
+  // rather than notice for themselves.
+  if (action === "approve") {
+    // A vendor approved before they ever signed in gets their invite in the same email, so
+    // there is nothing for the merchant to copy and paste.
+    const invited = await createOwnerInvite(shop, vendor.id, actor, { email: false });
+    await notifyVendorApproved(shop, vendor.id, invited.inviteToken ? inviteUrl(invited.inviteToken) : null);
+  } else if (action === "reject") {
+    await notifyVendorRejected(shop, vendor.id, trimmedReason);
+  } else if (action === "suspend") {
+    await notifyVendorPaused(shop, vendor.id, trimmedReason);
+  } else if (action === "reactivate") {
+    await notifyVendorReactivated(shop, vendor.id);
+  }
+
   return { vendor: updated };
 }
 
 // Creating a new link replaces (and so cancels) any previous one.
-export async function createOwnerInvite(shop, vendorId, actor) {
+export async function createOwnerInvite(shop, vendorId, actor, { email = true } = {}) {
   const owner = await db.vendorUser.findFirst({
     where: { vendorId, role: "OWNER", vendor: { shop } },
   });
@@ -234,6 +256,10 @@ export async function createOwnerInvite(shop, vendorId, actor) {
     }),
     db.vendorActivity.create({ data: { vendorId, action: "vendor.invite_created", actor } }),
   ]);
+
+  // Sent as well as shown: the merchant can still copy the link, but no longer has to.
+  // Approving a vendor says the same thing in its own email, so it asks for no second one.
+  if (email) await notifyVendorInvited(shop, vendorId, inviteUrl(invite.token));
 
   return { inviteToken: invite.token };
 }
