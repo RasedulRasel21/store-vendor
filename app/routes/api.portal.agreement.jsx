@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import db from "../db.server";
-import { acceptAgreement, agreementOwedBy } from "../models/agreement.server";
+import { acceptAgreement, agreementOwedBy, agreementsSignedBy } from "../models/agreement.server";
 
 // The agreement belongs to the store, so it's written, versioned and recorded here. The
 // portal asks whether this vendor owes one, shows it, and passes back what they signed.
@@ -41,6 +41,18 @@ export const action = async ({ request }) => {
     const owed = await agreementOwedBy(vendor.shop, vendor.id);
     return Response.json({
       owed: owed ? { id: owed.id, version: owed.version, title: owed.title, body: owed.body } : null,
+    });
+  }
+
+  // Everything this vendor has signed, so they can read it again in the portal.
+  if (intent === "signed") {
+    const signed = await agreementsSignedBy(vendor.shop, vendor.id);
+    return Response.json({
+      signed: signed.map((entry) => ({
+        ...entry,
+        publishedAt: entry.publishedAt?.toISOString() ?? null,
+        acceptedAt: entry.acceptedAt.toISOString(),
+      })),
     });
   }
 

@@ -110,6 +110,36 @@ export async function agreementHistoryFor(shop, vendorId) {
   });
 }
 
+/**
+ * What this vendor has signed, in full, so they can read it again whenever they like.
+ *
+ * Nobody should have to take a contract on trust because the page that showed it once is
+ * gone. The terms come from the version they actually accepted, not from whatever the
+ * store has published since.
+ */
+export async function agreementsSignedBy(shop, vendorId) {
+  const signed = await db.vendorAgreementAcceptance.findMany({
+    where: { shop, vendorId },
+    orderBy: { acceptedAt: "desc" },
+    include: { agreement: { select: { id: true, version: true, title: true, body: true, publishedAt: true } } },
+  });
+
+  const current = await currentAgreement(shop);
+
+  return signed.map((acceptance) => ({
+    id: acceptance.agreement.id,
+    version: acceptance.agreement.version,
+    title: acceptance.agreement.title,
+    body: acceptance.agreement.body,
+    publishedAt: acceptance.agreement.publishedAt,
+    signedName: acceptance.signedName,
+    signedEmail: acceptance.signedEmail,
+    acceptedAt: acceptance.acceptedAt,
+    // Whether this is the one in force, or an older one kept for the record.
+    current: current?.id === acceptance.agreement.id,
+  }));
+}
+
 function signerHash(ip) {
   if (!ip) return null;
   const key = process.env.ENCRYPTION_KEY ?? process.env.SHOPIFY_API_SECRET ?? "";
