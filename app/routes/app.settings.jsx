@@ -150,7 +150,7 @@ export const loader = async ({ request }) => {
     },
     vendorShipping: {
       enabled: settings.vendorShippingRates,
-      withRates: await db.vendorShippingRate.groupBy({ by: ["vendorId"], where: { shop: session.shop } }).then((rows) => rows.length),
+      withRates: await db.vendorShippingZone.groupBy({ by: ["vendorId"], where: { shop: session.shop } }).then((rows) => rows.length),
     },
     rules: {
       ...listingRules(settings),
@@ -308,7 +308,7 @@ export const action = async ({ request }) => {
     let pushed = 0;
     if (on) {
       const vendors = await db.vendor.findMany({
-        where: { shop: session.shop, status: "ACTIVE", shippingRates: { some: {} } },
+        where: { shop: session.shop, status: "ACTIVE", shippingZones: { some: {} } },
         select: { id: true },
       });
       for (const vendor of vendors) {

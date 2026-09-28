@@ -794,7 +794,7 @@ model Vendor {
   users              VendorUser[]
   products           VendorProduct[]
   activities         VendorActivity[]
-  shippingRates      VendorShippingRate[]
+  shippingZones      VendorShippingZone[]
   agreementAcceptances VendorAgreementAcceptance[]
   productSubmissions ProductSubmission[]
   changeRequests     VendorChangeRequest[]
@@ -921,26 +921,46 @@ model VendorAgreementAcceptance {
   @@index([shop, vendorId])
 }
 
-// What one vendor charges to deliver, by zone. Pushed into a Shopify delivery profile of
-// their own, so a cart with two vendors in it is charged both their rates.
-model VendorShippingRate {
+// What one vendor charges to deliver, shaped the way Shopify shapes it: a zone covers
+// some countries, and holds the options a customer can pick inside it. Pushed into a
+// delivery profile of the vendor's own, so a cart with two vendors is charged both.
+model VendorShippingZone {
   id           String   @id @default(cuid())
   shop         String
   vendorId     String
   vendor       Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  // What the customer sees, like "Standard" or "Next day".
+  // The vendor's own label. Customers never see it; Shopify's own zone names are the
+  // same way.
   name         String
-  // The zone this covers, as ISO alpha-2 codes. Empty means everywhere else.
+  // ISO alpha-2. Empty means everywhere the vendor's other zones don't cover.
   countryCodes String[]
-  price        Decimal  @db.Decimal(12, 2)
-  // When this rate applies, by what the order is worth. Either can stand alone: "at
-  // least 5000" makes a free-shipping threshold, "at most 4999" the rate below it.
-  minOrderTotal Decimal? @db.Decimal(12, 2)
-  maxOrderTotal Decimal? @db.Decimal(12, 2)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  rates VendorShippingRate[]
+
   @@index([vendorId])
+}
+
+// One delivery option inside a zone: what it's called at checkout, what it costs, and
+// when it's offered.
+model VendorShippingRate {
+  id     String             @id @default(cuid())
+  zoneId String
+  zone   VendorShippingZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  // What the customer sees, like "Standard" or "Next day".
+  name   String
+  price  Decimal            @db.Decimal(12, 2)
+  // How long it takes, shown under the name at checkout. Optional.
+  transitTime String?
+  // When this option is offered, by what the order is worth. Either can stand alone:
+  // "at least 5000" makes a free-shipping threshold, "at most 4999" the rate below it.
+  minOrderTotal Decimal? @db.Decimal(12, 2)
+  maxOrderTotal Decimal? @db.Decimal(12, 2)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([zoneId])
 }
 
 model VendorActivity {

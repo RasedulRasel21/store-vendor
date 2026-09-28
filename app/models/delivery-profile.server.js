@@ -4,13 +4,15 @@ import { COUNTRY_NAMES } from "../utils/countries";
 // Per-vendor delivery rates, done with Shopify's own delivery profiles rather than a
 // carrier service of ours.
 //
-// A profile holds zones, each zone holds a rate, and products are assigned to a profile.
-// When a cart holds products from two profiles Shopify charges both, which is exactly
-// what a marketplace wants: each vendor's own postage, added up. It also works on every
-// Shopify plan and costs nothing at checkout time, where a carrier-service callback
-// would have to answer in under half a second on plans that allow it at all.
+// A profile holds zones, each zone holds the options a customer can pick, and products
+// are assigned to a profile. When a cart holds products from two profiles Shopify charges
+// both, which is exactly what a marketplace wants: each vendor's own postage, added up.
+// It also works on every Shopify plan and costs nothing at checkout time, where a
+// carrier-service callback would have to answer in under half a second, on the plans that
+// allow one at all.
 //
-// One profile per vendor, named after them so a merchant can recognise it in Shopify.
+// A vendor's zones are shaped the same way Shopify shapes its own, so what they fill in
+// is what a merchant would recognise in Shopify's own shipping settings.
 
 const PROFILE_QUERY = `#graphql
   query VendorDeliveryProfile($id: ID!) {
@@ -67,41 +69,25 @@ const UPDATE_PROFILE = `#graphql
 // one call. Enough for a real vendor, small enough to stay inside one request.
 const MAX_PRODUCTS = 100;
 
-export function rateZones(rates) {
-  return rates.map((rate) => ({
-    name: rate.countryCodes.length
-      ? rate.countryCodes.map((code) => COUNTRY_NAMES[code] ?? code).slice(0, 3).join(", ") +
-        (rate.countryCodes.length > 3 ? ` +${rate.countryCodes.length - 3}` : "")
-      : "Everywhere else",
-    countryCodes: rate.countryCodes,
-    rateName: rate.name,
-    price: Number(rate.price),
-  }));
-}
+const MAX_ZONES = 20;
+const MAX_RATES_PER_ZONE = 10;
 
-// One zone per set of countries, with every rate for those countries inside it.
-//
-// A country can only belong to one zone, so a vendor who charges 60 inside Dhaka and 120
-// outside it can't have two zones both claiming Bangladesh — Shopify silently gives the
-// country to one of them and leaves the other covering nowhere. Both prices belong in
-// the same zone instead, and the customer picks at checkout, which is also how Shopify's
-// own multi-rate shipping reads.
-function zonesToCreate(rates, currencyCode) {
-  const byCountries = new Map();
-
-  for (const rate of rates) {
-    const codes = [...rate.countryCodes].sort();
-    const key = codes.join(",");
-    if (!byCountries.has(key)) byCountries.set(key, { codes, rates: [] });
-    byCountries.get(key).rates.push(rate);
-  }
-
-  return [...byCountries.values()].map(({ codes, rates: zoneRates }) => ({
-    name: codes.length ? codes.join(", ").slice(0, 60) : "Everywhere else",
-    countries: codes.length ? codes.map((code) => ({ code })) : [{ restOfWorld: true }],
-    methodDefinitionsToCreate: zoneRates.map((rate) => {
+// A zone maps straight onto a Shopify zone, with its options inside it. There used to be
+// grouping logic here to work zones out from a flat list of rates; keeping the same shape
+// as Shopify made it unnecessary.
+function zonesToCreate(zones, currencyCode) {
+  return zones.map((zone) => ({
+    name: zone.name.slice(0, 60),
+    // includeAllProvinces on every country, because Shopify refuses a country that has
+    // provinces ("United States must have at least one province associated") unless you
+    // either list them or say all of them. Countries with no provinces, Bangladesh among
+    // them, accept it happily — tested against a real store both ways.
+    countries: zone.countryCodes.length
+      ? zone.countryCodes.map((code) => ({ code, includeAllProvinces: true }))
+      : [{ restOfWorld: true }],
+    methodDefinitionsToCreate: zone.rates.map((rate) => {
       // "At least 5000" and "at most 4999" are how a free-shipping threshold is built:
-      // one rate above the line, another below it. Shopify compares the order total.
+      // one option above the line, another below it. Shopify compares the order total.
       const priceConditionsToCreate = [];
       if (rate.minOrderTotal !== null && rate.minOrderTotal !== undefined) {
         priceConditionsToCreate.push({
@@ -119,6 +105,7 @@ function zonesToCreate(rates, currencyCode) {
       return {
         name: rate.name,
         active: true,
+        ...(rate.transitTime ? { description: rate.transitTime } : {}),
         rateDefinition: { price: { amount: Number(rate.price).toFixed(2), currencyCode } },
         ...(priceConditionsToCreate.length ? { priceConditionsToCreate } : {}),
       };
@@ -146,13 +133,24 @@ async function vendorVariantIds(admin, shop, vendorId) {
   return { variantIds, products: links.length };
 }
 
+export function vendorZones(shop, vendorId) {
+  return db.vendorShippingZone.findMany({
+    where: { shop, vendorId },
+    orderBy: { createdAt: "asc" },
+    include: { rates: { orderBy: { createdAt: "asc" } } },
+  });
+}
+
 // Brings Shopify in line with what the vendor has set. Safe to call as often as you like:
 // it replaces the vendor's zones rather than adding to them.
 export async function syncVendorShipping(admin, shop, vendorId) {
-  const [settings, vendor, rates] = await Promise.all([
+  const [settings, vendor, zones] = await Promise.all([
     db.shopSettings.findUnique({ where: { shop } }),
-    db.vendor.findFirst({ where: { id: vendorId, shop }, select: { id: true, name: true, deliveryProfileId: true } }),
-    db.vendorShippingRate.findMany({ where: { shop, vendorId }, orderBy: { createdAt: "asc" } }),
+    db.vendor.findFirst({
+      where: { id: vendorId, shop },
+      select: { id: true, name: true, deliveryProfileId: true },
+    }),
+    vendorZones(shop, vendorId),
   ]);
   if (!vendor) return { error: "Vendor not found" };
   if (!settings?.vendorShippingRates) return { skipped: "Vendors don't set their own rates in this store." };
@@ -160,21 +158,21 @@ export async function syncVendorShipping(admin, shop, vendorId) {
   const currencyCode = settings.currencyCode ?? "USD";
   const { variantIds, products } = await vendorVariantIds(admin, shop, vendorId);
 
-  // No rates: their products go back to the store's own shipping rather than sitting in
-  // a profile that charges nothing.
-  if (!rates.length) {
+  // A zone with nothing in it offers no way to post anything, so it isn't sent.
+  const usable = zones.filter((zone) => zone.rates.length > 0);
+
+  // Nothing to charge: their products go back to the store's own shipping rather than
+  // sitting in a profile that can't deliver.
+  if (!usable.length) {
     if (vendor.deliveryProfileId && variantIds.length) {
       await admin.graphql(UPDATE_PROFILE, {
-        variables: {
-          id: vendor.deliveryProfileId,
-          profile: { variantsToDissociate: variantIds },
-        },
+        variables: { id: vendor.deliveryProfileId, profile: { variantsToDissociate: variantIds } },
       });
     }
     return { ok: true, zones: 0, products };
   }
 
-  const zones = zonesToCreate(rates, currencyCode);
+  const built = zonesToCreate(usable, currencyCode);
 
   if (vendor.deliveryProfileId) {
     // Read what's there so the old zones go as the new ones arrive; otherwise every save
@@ -190,7 +188,7 @@ export async function syncVendorShipping(admin, shop, vendorId) {
           id: vendor.deliveryProfileId,
           profile: {
             ...(oldZoneIds.length ? { zonesToDelete: oldZoneIds } : {}),
-            locationGroupsToUpdate: [{ id: group.locationGroup.id, zonesToCreate: zones }],
+            locationGroupsToUpdate: [{ id: group.locationGroup.id, zonesToCreate: built }],
             ...(variantIds.length ? { variantsToAssociate: variantIds } : {}),
           },
         },
@@ -198,7 +196,7 @@ export async function syncVendorShipping(admin, shop, vendorId) {
       const { data: updated } = await response.json();
       const failed = updated?.deliveryProfileUpdate?.userErrors?.[0]?.message;
       if (failed) return { error: failed };
-      return { ok: true, zones: zones.length, products };
+      return { ok: true, zones: built.length, products };
     }
     // The profile went missing in Shopify; fall through and make a new one.
   }
@@ -212,7 +210,7 @@ export async function syncVendorShipping(admin, shop, vendorId) {
     variables: {
       profile: {
         name: `${vendor.name} shipping`.slice(0, 250),
-        locationGroupsToCreate: [{ locationsToAdd: locationIds, zonesToCreate: zones }],
+        locationGroupsToCreate: [{ locationsToAdd: locationIds, zonesToCreate: built }],
         ...(variantIds.length ? { variantsToAssociate: variantIds } : {}),
       },
     },
@@ -225,94 +223,104 @@ export async function syncVendorShipping(admin, shop, vendorId) {
   if (!profileId) return { error: "Shopify didn't create the delivery profile." };
 
   await db.vendor.update({ where: { id: vendor.id }, data: { deliveryProfileId: profileId } });
-  return { ok: true, created: true, zones: zones.length, products };
+  return { ok: true, created: true, zones: built.length, products };
 }
 
-const MAX_RATES = 20;
+const amount = (value) => {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  const number = Number(text);
+  return Number.isFinite(number) && number >= 0 ? number : NaN;
+};
 
-export async function saveVendorRates(shop, vendorId, rows) {
-  const clean = [];
+// Saves the lot — zones and the options inside them — replacing whatever was there.
+export async function saveVendorZones(shop, vendorId, incoming) {
   const errors = {};
+  const clean = [];
 
-  (rows ?? []).slice(0, MAX_RATES).forEach((row, index) => {
-    const name = String(row?.name ?? "").trim().slice(0, 80);
-    const price = Number(row?.price);
+  (incoming ?? []).slice(0, MAX_ZONES).forEach((zone, z) => {
+    const name = String(zone?.name ?? "").trim().slice(0, 60);
     const countryCodes = [
       ...new Set(
-        (Array.isArray(row?.countryCodes) ? row.countryCodes : [])
+        (Array.isArray(zone?.countryCodes) ? zone.countryCodes : [])
           .map((code) => String(code).toUpperCase().slice(0, 2))
           .filter((code) => COUNTRY_NAMES[code]),
       ),
     ];
 
-    const amount = (value) => {
-      const text = String(value ?? "").trim();
-      if (!text) return null;
-      const number = Number(text);
-      return Number.isFinite(number) && number >= 0 ? number : NaN;
-    };
-    const min = amount(row?.minOrderTotal);
-    const max = amount(row?.maxOrderTotal);
+    if (!name) errors[`zones.${z}.name`] = "Give this zone a name, so you can tell them apart";
 
-    if (!name) errors[`rates.${index}.name`] = "Give this rate a name customers will understand";
-    if (!Number.isFinite(price) || price < 0) errors[`rates.${index}.price`] = "Use a price of zero or more";
-    if (Number.isNaN(min)) errors[`rates.${index}.minOrderTotal`] = "Use an amount, or leave it empty";
-    if (Number.isNaN(max)) errors[`rates.${index}.maxOrderTotal`] = "Use an amount, or leave it empty";
-    if (min !== null && max !== null && !Number.isNaN(min) && !Number.isNaN(max) && min > max) {
-      errors[`rates.${index}.maxOrderTotal`] = "This has to be more than the smallest order";
-    }
-    if (Object.keys(errors).length) return;
+    const rates = [];
+    (Array.isArray(zone?.rates) ? zone.rates : []).slice(0, MAX_RATES_PER_ZONE).forEach((rate, r) => {
+      const rateName = String(rate?.name ?? "").trim().slice(0, 80);
+      const price = Number(rate?.price);
+      const min = amount(rate?.minOrderTotal);
+      const max = amount(rate?.maxOrderTotal);
 
-    clean.push({
-      name,
-      price: price.toFixed(2),
-      countryCodes,
-      minOrderTotal: min === null ? null : min.toFixed(2),
-      maxOrderTotal: max === null ? null : max.toFixed(2),
+      if (!rateName) errors[`zones.${z}.rates.${r}.name`] = "Name this option — the customer sees it";
+      if (!Number.isFinite(price) || price < 0) {
+        errors[`zones.${z}.rates.${r}.price`] = "Use a price of zero or more";
+      }
+      if (Number.isNaN(min)) errors[`zones.${z}.rates.${r}.minOrderTotal`] = "Use an amount, or leave it empty";
+      if (Number.isNaN(max)) errors[`zones.${z}.rates.${r}.maxOrderTotal`] = "Use an amount, or leave it empty";
+      if (min !== null && max !== null && !Number.isNaN(min) && !Number.isNaN(max) && min > max) {
+        errors[`zones.${z}.rates.${r}.maxOrderTotal`] = "This has to be more than the smallest order";
+      }
+
+      rates.push({
+        name: rateName,
+        price: Number.isFinite(price) && price >= 0 ? price.toFixed(2) : "0.00",
+        transitTime: String(rate?.transitTime ?? "").trim().slice(0, 80) || null,
+        minOrderTotal: min === null || Number.isNaN(min) ? null : min.toFixed(2),
+        maxOrderTotal: max === null || Number.isNaN(max) ? null : max.toFixed(2),
+      });
     });
+
+    if (!rates.length) errors[`zones.${z}.rates`] = "Add a delivery option, or remove the zone";
+
+    // Two options with the same name in one zone are indistinguishable at checkout.
+    const names = rates.map((rate) => rate.name.toLowerCase());
+    if (names.length && new Set(names).size !== names.length) {
+      errors[`zones.${z}.rates`] = "Two options here have the same name. Give them different ones.";
+    }
+
+    clean.push({ name, countryCodes, rates });
   });
+
+  // A country belongs to one zone only. Shopify gives it to the first and leaves the
+  // other covering nowhere, which is how a rate silently stops being offered.
+  const claimed = new Map();
+  clean.forEach((zone, z) => {
+    for (const code of zone.countryCodes) {
+      if (claimed.has(code)) {
+        errors[`zones.${z}.countryCodes`] =
+          `${COUNTRY_NAMES[code] ?? code} is already in "${claimed.get(code)}". A country can only be in one zone.`;
+      } else {
+        claimed.set(code, zone.name || "another zone");
+      }
+    }
+  });
+
+  if (clean.filter((zone) => !zone.countryCodes.length).length > 1) {
+    errors.form = "Only one zone can cover everywhere else.";
+  }
 
   if (Object.keys(errors).length) return { errors };
 
-  // Rates covering the same countries end up as choices in one zone, so duplicates are
-  // fine — but two with the same name in the same zone would be indistinguishable at
-  // checkout.
-  const seen = new Set();
-  for (const rate of clean) {
-    const key = [
-      [...rate.countryCodes].sort().join(","),
-      rate.name.toLowerCase(),
-      rate.minOrderTotal ?? "",
-      rate.maxOrderTotal ?? "",
-    ].join("|");
-    if (seen.has(key)) {
-      return {
-        errors: { form: `Two rates called "${rate.name}" cover the same places. Give them different names.` },
-      };
-    }
-    seen.add(key);
-  }
-
   await db.$transaction([
-    db.vendorShippingRate.deleteMany({ where: { shop, vendorId } }),
-    ...clean.map((rate) =>
-      db.vendorShippingRate.create({
+    db.vendorShippingZone.deleteMany({ where: { shop, vendorId } }),
+    ...clean.map((zone) =>
+      db.vendorShippingZone.create({
         data: {
           shop,
           vendorId,
-          name: rate.name,
-          price: rate.price,
-          countryCodes: rate.countryCodes,
-          minOrderTotal: rate.minOrderTotal,
-          maxOrderTotal: rate.maxOrderTotal,
+          name: zone.name,
+          countryCodes: zone.countryCodes,
+          rates: { create: zone.rates },
         },
       }),
     ),
   ]);
 
   return { saved: clean.length };
-}
-
-export function vendorRates(shop, vendorId) {
-  return db.vendorShippingRate.findMany({ where: { shop, vendorId }, orderBy: { createdAt: "asc" } });
 }

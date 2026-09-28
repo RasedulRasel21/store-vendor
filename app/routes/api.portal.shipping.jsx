@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import db from "../db.server";
 import { unauthenticated } from "../shopify.server";
-import { saveVendorRates, syncVendorShipping, vendorRates } from "../models/delivery-profile.server";
+import { saveVendorZones, syncVendorShipping, vendorZones } from "../models/delivery-profile.server";
 
 // A vendor's own delivery rates. They set them in the portal; putting them in front of a
 // customer means writing a Shopify delivery profile, which only the app can do.
@@ -44,16 +44,20 @@ export const action = async ({ request }) => {
   });
 
   if (intent === "read") {
-    const rates = await vendorRates(vendor.shop, vendor.id);
+    const zones = await vendorZones(vendor.shop, vendor.id);
     return Response.json({
       enabled: Boolean(settings?.vendorShippingRates),
       currencyCode: settings?.currencyCode ?? "USD",
-      rates: rates.map((rate) => ({
-        name: rate.name,
-        price: rate.price.toString(),
-        countryCodes: rate.countryCodes,
-        minOrderTotal: rate.minOrderTotal === null ? "" : rate.minOrderTotal.toString(),
-        maxOrderTotal: rate.maxOrderTotal === null ? "" : rate.maxOrderTotal.toString(),
+      zones: zones.map((zone) => ({
+        name: zone.name,
+        countryCodes: zone.countryCodes,
+        rates: zone.rates.map((rate) => ({
+          name: rate.name,
+          price: rate.price.toString(),
+          transitTime: rate.transitTime ?? "",
+          minOrderTotal: rate.minOrderTotal === null ? "" : rate.minOrderTotal.toString(),
+          maxOrderTotal: rate.maxOrderTotal === null ? "" : rate.maxOrderTotal.toString(),
+        })),
       })),
     });
   }
@@ -63,7 +67,7 @@ export const action = async ({ request }) => {
       return Response.json({ error: "This store sets the shipping itself." }, { status: 409 });
     }
 
-    const result = await saveVendorRates(vendor.shop, vendor.id, body?.rates ?? []);
+    const result = await saveVendorZones(vendor.shop, vendor.id, body?.zones ?? []);
     if (result.errors) return Response.json({ errors: result.errors }, { status: 422 });
 
     // Saved either way; if Shopify can't be reached the rates are still here and the
