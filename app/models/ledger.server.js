@@ -3,10 +3,25 @@ import { round2 } from "../utils/money";
 
 const DAY = 24 * 60 * 60 * 1000;
 
-// What a vendor order should be worth to the vendor right now. A cancelled order, or one
-// whose items all moved to other vendors, is worth nothing.
+// A vendor who ships a cash-on-delivery order takes the customer's money at the door —
+// all of it, including the store's commission and the tax the store has to remit. So the
+// debt runs the other way on those orders, and nothing is owed to the vendor for them.
+export function vendorHoldsTheCash(vendorOrder) {
+  return Boolean(vendorOrder?.cashOnDelivery) && vendorOrder?.shippingMode === "VENDOR_SHIPS";
+}
+
+// What a vendor order is worth to the vendor right now, which can be a negative number.
+// A cancelled order, or one whose items all moved to other vendors, is worth nothing.
 function owedOn(vendorOrder) {
   if (vendorOrder.status === "CANCELLED" || vendorOrder._count.lines === 0) return 0;
+
+  if (vendorHoldsTheCash(vendorOrder)) {
+    // They keep their share out of the cash; what's left over is the store's.
+    const commission = Number(vendorOrder.commission) - Number(vendorOrder.refundedCommission);
+    const tax = Number(vendorOrder.tax) - Number(vendorOrder.refundedTax);
+    return round2(-(commission + tax));
+  }
+
   return round2(Number(vendorOrder.earnings) - Number(vendorOrder.refundedEarnings));
 }
 
@@ -29,8 +44,14 @@ export async function syncOrderLedger(vendorOrderId) {
         orderName: true,
         currencyCode: true,
         status: true,
+        shippingMode: true,
+        cashOnDelivery: true,
         earnings: true,
         refundedEarnings: true,
+        commission: true,
+        refundedCommission: true,
+        tax: true,
+        refundedTax: true,
         _count: { select: { lines: true } },
       },
     });
@@ -64,6 +85,19 @@ export async function syncOrderLedger(vendorOrderId) {
     // "sale, then refund" rather than a smaller sale nobody can explain.
     if (recorded._count._all === 0) {
       if (target === 0) return [];
+
+      if (vendorHoldsTheCash(vendorOrder)) {
+        // One entry, not a sale and a reversal: they were never owed this money.
+        created.push(
+          await entry(
+            "COD_COLLECTED",
+            target,
+            `You collected the cash for ${vendorOrder.orderName}; commission and tax owed`,
+          ),
+        );
+        return created;
+      }
+
       const gross = round2(vendorOrder.earnings);
       created.push(await entry("SALE", gross, `Your share of ${vendorOrder.orderName}`));
       current = gross;
@@ -178,8 +212,10 @@ export async function vendorBalances(shop, { vendorId, hold }, client = db) {
     const order = row.vendorOrderId ? orderById.get(row.vendorOrderId) : null;
     const release = order ? releasesAt(order, hold) : null;
 
-    // An entry tied to an order waits for that order; anything else counts straight away.
-    if (order && (!release || release.getTime() > now)) balance.pending += amount;
+    // Money owed to a vendor waits for the hold to pass. Money a vendor owes counts at
+    // once: they already have it, so holding it back would flatter their balance.
+    const waiting = order && (!release || release.getTime() > now);
+    if (waiting && amount > 0) balance.pending += amount;
     else balance.available += amount;
   }
 

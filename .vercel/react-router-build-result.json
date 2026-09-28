@@ -32,6 +32,7 @@
       "routes/api.portal.apply": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/webhooks.returns": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/api.order-split": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/api.portal.cash": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/api.portal.tax": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/proxy.$handle": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/proxy._index": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
@@ -262,6 +263,15 @@
         "parentId": "root",
         "file": "app/routes/api.order-split.jsx",
         "path": "api/order-split",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/api.portal.cash": {
+        "id": "routes/api.portal.cash",
+        "parentId": "root",
+        "file": "app/routes/api.portal.cash.jsx",
+        "path": "api/portal/cash",
         "config": {
           "runtime": "nodejs"
         }
@@ -684,6 +694,12 @@
         "file": "routes/api.order-split.jsx",
         "path": "api/order-split"
       },
+      "routes/api.portal.cash": {
+        "id": "routes/api.portal.cash",
+        "parentId": "root",
+        "file": "routes/api.portal.cash.jsx",
+        "path": "api/portal/cash"
+      },
       "routes/api.portal.tax": {
         "id": "routes/api.portal.tax",
         "parentId": "root",
@@ -989,6 +1005,11 @@
             "id": "routes/api.order-split",
             "file": "routes/api.order-split.jsx",
             "path": "api/order-split"
+          },
+          {
+            "id": "routes/api.portal.cash",
+            "file": "routes/api.portal.cash.jsx",
+            "path": "api/portal/cash"
           },
           {
             "id": "routes/api.portal.tax",

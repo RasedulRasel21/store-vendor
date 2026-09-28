@@ -10,6 +10,7 @@ import { getShopSettings } from "../models/settings.server";
 import {
   fulfillVendorOrder,
   getVendorOrder,
+  markCashCollected,
   orderTimeline,
   reassignOrderLine,
 } from "../models/vendor-order.server";
@@ -75,6 +76,11 @@ export const loader = async ({ request, params }) => {
       orderNumericId: vendorOrder.orderId.split("/").pop(),
       status: vendorOrder.status,
       financialStatus: vendorOrder.financialStatus,
+      cashOnDelivery: vendorOrder.cashOnDelivery,
+      // Cash still to be handed over: the money can't reach the vendor until it is.
+      awaitingCash: vendorOrder.cashOnDelivery && !vendorOrder.paidAt && vendorOrder.status !== "CANCELLED",
+      cashCollectedAt: formatDate(vendorOrder.cashCollectedAt),
+      vendorHoldsTheCash: vendorOrder.cashOnDelivery && vendorOrder.shippingMode === "VENDOR_SHIPS",
       placedAt: formatDate(vendorOrder.placedAt),
       // Only worth saying while the vendor still has something to do about it.
       accepted:
@@ -162,6 +168,11 @@ export const action = async ({ request, params }) => {
   const { admin, session } = await authenticate.admin(request);
   const formData = await request.formData();
   const intent = String(formData.get("intent") ?? "");
+
+  if (intent === "cashCollected") {
+    const result = await markCashCollected(admin, session.shop, params.id, "merchant");
+    return { intent, error: result.error ?? null, saved: Boolean(result.ok) };
+  }
 
   if (intent === "resolveIssue") {
     const result = await resolveIssue(
@@ -496,6 +507,28 @@ export default function VendorOrderDetail() {
           ) : (
             order.shippingMethod && <s-text color="subdued">{`Chosen at checkout: ${order.shippingMethod}`}</s-text>
           )}
+          {order.awaitingCash && (
+            <s-banner tone="warning" heading="Cash on delivery, not paid yet">
+              <s-paragraph>
+                {order.vendorHoldsTheCash
+                  ? "The vendor collects this cash themselves. Mark it collected once they confirm, and what they owe you in commission and tax goes on their balance."
+                  : "Mark it collected once the courier hands the money over. Nothing reaches the vendor's balance until you do."}
+              </s-paragraph>
+              <Form method="post">
+                <input type="hidden" name="intent" value="cashCollected" />
+                <s-stack direction="inline">
+                  <s-button type="submit" variant="primary" loading={submittingIntent === "cashCollected"}>
+                    Cash collected
+                  </s-button>
+                </s-stack>
+              </Form>
+            </s-banner>
+          )}
+
+          {actionData?.intent === "cashCollected" && actionData.error && (
+            <s-banner tone="critical">{actionData.error}</s-banner>
+          )}
+
           {order.financialStatus && (
             <s-text color="subdued">
               {`Payment: ${order.financialStatus}${order.paidAt ? ` · paid ${order.paidAt}` : ""}`}

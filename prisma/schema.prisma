@@ -262,6 +262,14 @@ model VendorOrder {
   // the vendor's setting later doesn't rewrite past orders.
   shippingMode    ShippingMode @default(VENDOR_SHIPS)
   financialStatus String?
+  // How the customer paid, as Shopify names it, and whether that means cash on delivery.
+  // A COD order arrives unpaid and stays that way until someone says the cash arrived.
+  paymentGateway  String?
+  cashOnDelivery  Boolean @default(false)
+  // Who said the cash was handed over, and when. Shopify's own paid status is what
+  // actually releases the money; this is the record of who pressed the button.
+  cashCollectedAt DateTime?
+  cashCollectedBy String?
   customerName    String?
   customerEmail   String?
   customerPhone   String?
@@ -277,6 +285,11 @@ model VendorOrder {
   // The store's refund rule when this order came in, so changing the setting later
   // doesn't rewrite refunds on orders sold under the old rule.
   refundKeepsCommission Boolean @default(false)
+
+  // Tax on this vendor's lines. Never the vendor's money — the store remits it — but a
+  // vendor who collects cash on delivery is holding it and owes it back.
+  tax         Decimal @default(0) @db.Decimal(12, 2)
+  refundedTax Decimal @default(0) @db.Decimal(12, 2)
 
   // Refunds reverse part of the sale. Payable earnings are earnings minus refundedEarnings.
   refunded           Decimal @default(0) @db.Decimal(12, 2)
@@ -425,6 +438,9 @@ model LedgerEntry {
 enum LedgerEntryType {
   // The vendor's share of an order.
   SALE
+  // The vendor took the customer's cash themselves on a cash-on-delivery order, so they
+  // hold the store's commission and its tax and owe both back.
+  COD_COLLECTED
   // A refund took some of it back.
   REFUND
   // The order was cancelled, so none of it is owed.

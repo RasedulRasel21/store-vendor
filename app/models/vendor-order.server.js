@@ -16,6 +16,7 @@ const ORDER_FOR_SPLIT = `#graphql
       name
       processedAt
       displayFinancialStatus
+      paymentGatewayNames
       currencyCode
       presentmentCurrencyCode
       taxesIncluded
@@ -337,6 +338,11 @@ export async function splitOrder(admin, shop, orderGid) {
   const shippingForVendor = (vendor) =>
     soleVendor && vendor.id === soleVendor.id && vendor.shippingMode === "VENDOR_SHIPS" ? shippingTotal : 0;
 
+  // Shopify names its built-in cash-on-delivery gateway differently by locale and by
+  // how the merchant set it up, so the test is deliberately loose.
+  const gatewayNames = (order.paymentGatewayNames ?? []).join(", ");
+  const isCashOnDelivery = /cash on delivery|(^|[^a-z])cod([^a-z]|$)/i.test(gatewayNames);
+
   const address = order.shippingAddress;
   const placedAt = new Date(order.processedAt);
   // Pickup and digital orders aren't posted, which changes what vendors are told to do.
@@ -379,6 +385,17 @@ export async function splitOrder(admin, shop, orderGid) {
     const refundedShipping = fullyRefunded
       ? shipping
       : round2(Math.min(shipping, groups.size === 1 ? unallocatedRefund : 0));
+    const tax = round2(lines.reduce((sum, line) => sum + Number(line.tax ?? 0), 0));
+    // Refunds don't come back broken down by tax, so the refunded share of the tax
+    // follows the refunded share of the items.
+    const refundedTax = round2(
+      lines.reduce((sum, line) => {
+        const refundedSubtotal = Number(line.refundedSubtotal ?? 0);
+        if (!refundedSubtotal || !Number(line.tax)) return sum;
+        const share = Number(line.subtotal) > 0 ? Math.min(1, refundedSubtotal / Number(line.subtotal)) : 1;
+        return sum + Number(line.tax) * share;
+      }, 0),
+    );
     const refunded = round2(refundedItems + refundedShipping);
     const record = {
       status: orderStatus(
@@ -403,6 +420,8 @@ export async function splitOrder(admin, shop, orderGid) {
       shippingMethod: order.shippingLine?.title ?? null,
       shippingMode: vendor.shippingMode,
       financialStatus: order.displayFinancialStatus ?? null,
+      paymentGateway: gatewayNames || null,
+      cashOnDelivery: isCashOnDelivery,
       customerName: order.customer?.displayName ?? address?.name ?? null,
       customerEmail: order.email ?? null,
       customerPhone: order.phone ?? address?.phone ?? null,
@@ -421,6 +440,8 @@ export async function splitOrder(admin, shop, orderGid) {
       subtotal: subtotal.toFixed(2),
       commission: commission.toFixed(2),
       shipping: shipping.toFixed(2),
+      tax: tax.toFixed(2),
+      refundedTax: refundedTax.toFixed(2),
       earnings: round2(subtotal - commission + shipping).toFixed(2),
       refunded: refunded.toFixed(2),
       refundKeepsCommission,
@@ -1194,4 +1215,82 @@ export async function vendorOrderTotals(shop) {
   ]);
 
   return { openVendorOrders: open, commissionEarned: earnings._sum.commission ?? 0 };
+}
+
+const MARK_AS_PAID = `#graphql
+  mutation MarkOrderPaid($input: OrderMarkAsPaidInput!) {
+    orderMarkAsPaid(input: $input) {
+      order {
+        id
+        displayFinancialStatus
+      }
+      userErrors {
+        field
+        message
+      }
+    }
+  }`;
+
+// A cash-on-delivery order arrives unpaid and stays unpaid until somebody says the money
+// arrived. Nothing releases a vendor's earnings until it's paid, so without this the
+// money sits in "not yet available" for good.
+//
+// Shopify is told, not just us: marking it paid there is what makes the order true
+// everywhere, and the webhook that comes back sets paidAt the same way it would for a
+// card. What we keep is who said so.
+export async function markCashCollected(admin, shop, vendorOrderId, actor) {
+  const vendorOrder = await db.vendorOrder.findFirst({
+    where: { id: vendorOrderId, shop },
+    select: {
+      id: true,
+      orderId: true,
+      orderName: true,
+      vendorId: true,
+      status: true,
+      paidAt: true,
+      cashOnDelivery: true,
+      cashCollectedAt: true,
+    },
+  });
+  if (!vendorOrder) return { error: "Order not found" };
+  if (!vendorOrder.cashOnDelivery) return { error: "This order wasn't cash on delivery." };
+  if (vendorOrder.status === "CANCELLED") return { error: "This order was cancelled." };
+  if (vendorOrder.paidAt) return { error: "This order is already paid." };
+
+  const response = await admin.graphql(MARK_AS_PAID, {
+    variables: { input: { id: vendorOrder.orderId } },
+  });
+  const { data } = await response.json();
+  const failed = data?.orderMarkAsPaid?.userErrors?.[0]?.message;
+  if (failed) return { error: failed };
+  if (!data?.orderMarkAsPaid?.order) return { error: "Shopify didn't mark the order paid. Try again." };
+
+  const now = new Date();
+  // Every vendor on the order is paid at once, because the customer paid once.
+  await db.vendorOrder.updateMany({
+    where: { shop, orderId: vendorOrder.orderId, paidAt: null },
+    data: {
+      paidAt: now,
+      cashCollectedAt: now,
+      cashCollectedBy: actor,
+      financialStatus: data.orderMarkAsPaid.order.displayFinancialStatus ?? "PAID",
+    },
+  });
+
+  const affected = await db.vendorOrder.findMany({
+    where: { shop, orderId: vendorOrder.orderId },
+    select: { id: true, vendorId: true },
+  });
+  for (const row of affected) await syncOrderLedger(row.id);
+
+  await db.vendorActivity.create({
+    data: {
+      vendorId: vendorOrder.vendorId,
+      action: "order.cash_collected",
+      actor,
+      details: { orderName: vendorOrder.orderName },
+    },
+  });
+
+  return { ok: true };
 }

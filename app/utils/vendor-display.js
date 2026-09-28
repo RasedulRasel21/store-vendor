@@ -78,6 +78,7 @@ const ACTIVITY_LABELS = {
   "order.fulfilled": "Order marked shipped",
   "order.partly_fulfilled": "Part of an order shipped",
   "order.refunded": "Order refunded",
+  "order.cash_collected": "Cash collected on delivery",
   "order.line_moved_in": "Order item moved to this vendor",
   "order.line_moved_out": "Order item moved to another vendor",
   "order.issue_raised": "Vendor can't ship an order",
