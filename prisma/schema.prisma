@@ -963,6 +963,54 @@ model VendorShippingRate {
   @@index([zoneId])
 }
 
+// Something that went wrong, in either half of the system. The same fault happening a
+// thousand times is one row with a count, so a bad afternoon doesn't fill the database and
+// the list stays readable.
+model ErrorEvent {
+  id String @id @default(cuid())
+  // "app" or "portal", so it's clear which half broke.
+  source String
+  // Where it happened: a route, a webhook topic, a nightly job.
+  context String
+  // source + context + the message with ids and numbers taken out, hashed. Two of the same
+  // fault land on the same row even though their messages mention different orders.
+  fingerprint String @unique
+  // The shop it affected, when there is one. Without it the error is ours, not a
+  // merchant's, and stays off their health page.
+  shop     String?
+  vendorId String?
+  message  String
+  stack    String?
+  // Anything worth keeping that isn't personal: an order id, the intent, a status code.
+  details Json?
+  count   Int    @default(1)
+  // Cleared by the merchant, or by the next nightly run once it has been quiet a while.
+  resolvedAt  DateTime?
+  firstSeenAt DateTime  @default(now())
+  lastSeenAt  DateTime  @default(now())
+  // Throttles the alert: a fault that keeps firing pings us once an hour, not every time.
+  alertedAt DateTime?
+
+  @@index([shop, lastSeenAt])
+  @@index([lastSeenAt])
+}
+
+// One row per health probe. Whatever monitor is pointed at /health builds the history
+// here, so "was it up last night?" has an answer without logging into anyone's dashboard.
+model UptimeCheck {
+  id        String   @id @default(cuid())
+  // Which half was being checked: "app" or "portal".
+  target    String
+  ok        Boolean
+  // How long the check itself took, in milliseconds.
+  ms        Int
+  // What failed, when something did.
+  detail    String?
+  checkedAt DateTime @default(now())
+
+  @@index([target, checkedAt])
+}
+
 model VendorActivity {
   id        String   @id @default(cuid())
   vendorId  String

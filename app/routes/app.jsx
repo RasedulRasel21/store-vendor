@@ -5,6 +5,7 @@ import { authenticate } from "../shopify.server";
 import { ensureCodRules } from "../models/cod-rules.server";
 import { ensureCollectionsSynced } from "../models/collection.server";
 import { ensureShopCurrency } from "../models/settings.server";
+import { reportError } from "../models/error-report.server";
 
 export const loader = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
@@ -17,7 +18,9 @@ export const loader = async ({ request }) => {
     ensureCodRules(admin, session.shop),
   ]);
   for (const result of results) {
-    if (result.status === "rejected") console.error("Couldn't prepare shop data for vendors", result.reason);
+    if (result.status === "rejected") {
+      await reportError(result.reason, { context: "app:prepare-shop", shop: session.shop });
+    }
   }
 
   // eslint-disable-next-line no-undef
@@ -38,6 +41,7 @@ export default function App() {
         <s-link href="/app/changes">Setting changes</s-link>
         <s-link href="/app/agreement">Seller agreement</s-link>
         <s-link href="/app/settings">Settings</s-link>
+        <s-link href="/app/health">Health</s-link>
       </s-app-nav>
       <Outlet />
     </AppProvider>

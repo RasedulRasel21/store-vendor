@@ -1,5 +1,6 @@
 import db from "../db.server";
 import { getShopCollections } from "./collection.server";
+import { reportError } from "./error-report.server";
 import { sanitizeDescription } from "../utils/sanitize-description.server";
 import { SUBMISSION_REVIEW_STATUSES } from "../utils/vendor-display";
 
@@ -350,7 +351,12 @@ export async function approveProductSubmission(admin, shop, id, actor) {
       warning = "The product was created, but the Online Store channel wasn't found, so it isn't published yet.";
     }
   } catch (error) {
-    console.error("Product approval failed", error);
+    await reportError(error, {
+      context: "product:approve",
+      shop,
+      vendorId: submission.vendorId,
+      details: { submissionId: submission.id },
+    });
     return { error: "Shopify couldn't create the product. Check the product details and try again." };
   }
 
@@ -435,7 +441,12 @@ export async function approveProductEdit(admin, shop, id, actor) {
       return { error: message ?? "Shopify couldn't update the product. Try again." };
     }
   } catch (error) {
-    console.error("Product edit approval failed", error);
+    await reportError(error, {
+      context: "product:approve-edit",
+      shop,
+      vendorId: submission.vendorId,
+      details: { submissionId: submission.id },
+    });
     return { error: "Shopify couldn't update the product. Check the details and try again." };
   }
 
@@ -564,7 +575,7 @@ export async function approveMany(admin, shop, ids, actor) {
       if (result.error) failed.push({ title: row.title, error: result.error });
       else approved.push({ title: row.title, warning: result.warning ?? null });
     } catch (error) {
-      console.error(`Bulk approve failed for ${id}`, error);
+      await reportError(error, { context: "product:bulk-approve", shop, details: { submissionId: id } });
       failed.push({ title: row.title, error: "Shopify couldn't be reached. Try this one on its own." });
     }
   }

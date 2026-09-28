@@ -9,6 +9,8 @@ import { refreshRates } from "../models/fx.server";
 import { getShopSettings } from "../models/settings.server";
 import { syncRecentOrders } from "../models/vendor-order.server";
 import { pruneWebhookEvents } from "../models/webhook-event.server";
+import { pruneErrorEvents, reportError } from "../models/error-report.server";
+import { pruneUptimeChecks, runHealthCheck } from "../models/health.server";
 
 // Webhooks can be missed: the app can be down, a deploy can be mid-flight, or Shopify can
 // give up retrying. Once a night every shop's recent orders are read again, which fills in
@@ -93,13 +95,37 @@ export const loader = async ({ request }) => {
       });
     } catch (error) {
       // One shop with an expired token shouldn't stop the others.
-      console.error(`Nightly reconcile failed for ${shop}`, error);
+      await reportError(error, { context: "cron:nightly", shop });
       results.push({ shop, failed: true });
     }
   }
 
-  const pruned = await pruneWebhookEvents();
-  console.log(`Reconciled ${shops.length} shops, pruned ${pruned.count} webhook records`);
+  // At least one check a day, so the history isn't blank even before a monitor is pointed
+  // at /health.
+  const health = await runHealthCheck();
+  if (!health.ok) {
+    await reportError(
+      `The nightly check found something down: ${health.checks.portal.ok ? "the database" : "the vendor portal"}`,
+      { context: "cron:health", details: health.checks },
+    );
+  }
 
-  return Response.json({ shops: shops.length, prunedWebhookEvents: pruned.count, results });
+  const [webhooks, errors, uptime] = await Promise.all([
+    pruneWebhookEvents(),
+    pruneErrorEvents(),
+    pruneUptimeChecks(),
+  ]);
+  console.log(
+    `Reconciled ${shops.length} shops, pruned ${webhooks.count} webhook, ` +
+      `${errors.count} error and ${uptime.count} uptime records`,
+  );
+
+  return Response.json({
+    shops: shops.length,
+    healthy: health.ok,
+    prunedWebhookEvents: webhooks.count,
+    prunedErrorEvents: errors.count,
+    prunedUptimeChecks: uptime.count,
+    results,
+  });
 };

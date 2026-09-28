@@ -20,7 +20,7 @@ export const loader = async ({ request }) => {
     getVendorOverview(session.shop),
     getShopSettings(session.shop),
   ]);
-  const [balances, payoutsToSend, payoutRequests, bounced, overdueOrders, unpayable] =
+  const [balances, payoutsToSend, payoutRequests, bounced, overdueOrders, unpayable, faults] =
     await Promise.all([
       vendorBalances(session.shop, { hold: holdOf(settings) }),
       db.payout.count({ where: { shop: session.shop, status: "PENDING" } }),
@@ -36,6 +36,10 @@ export const loader = async ({ request }) => {
       db.vendor.findMany({
         where: { shop: session.shop, status: "ACTIVE", payoutMethod: null },
         select: { id: true },
+      }),
+      // Something in this shop failed and nobody has looked at it yet.
+      db.errorEvent.count({
+        where: { shop: session.shop, resolvedAt: null, lastSeenAt: { gte: recently() } },
       }),
     ]);
   const availableToPay = [...balances.values()].reduce(
@@ -53,6 +57,7 @@ export const loader = async ({ request }) => {
       bounced,
       overdueOrders,
       waitingOnDetails,
+      faults,
       fulfillmentDays: settings.fulfillmentDays,
     },
     availableToPay: formatMoney(availableToPay, settings.currencyCode ?? "USD"),
@@ -116,6 +121,16 @@ export default function Index() {
           : `${alerts.waitingOnDetails} vendors have earned money but haven't added payout details.`,
       action: "See who",
       href: "/app/payouts",
+    },
+    alerts.faults && {
+      id: "faults",
+      tone: "warning",
+      text:
+        alerts.faults === 1
+          ? "Something failed in your store recently."
+          : `${alerts.faults} things failed in your store recently.`,
+      action: "See what",
+      href: "/app/health",
     },
     alerts.overdueOrders && {
       id: "overdue",

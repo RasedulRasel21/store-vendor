@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import db from "../db.server";
 import { unauthenticated } from "../shopify.server";
 import { saveVendorZones, syncVendorShipping, vendorZones } from "../models/delivery-profile.server";
+import { reportError } from "../models/error-report.server";
 
 // A vendor's own delivery rates. They set them in the portal; putting them in front of a
 // customer means writing a Shopify delivery profile, which only the app can do.
@@ -78,7 +79,11 @@ export const action = async ({ request }) => {
       if (pushed.error) return Response.json({ ok: true, warning: pushed.error });
       return Response.json({ ok: true, zones: pushed.zones ?? 0, products: pushed.products ?? 0 });
     } catch (error) {
-      console.error("Delivery profile sync failed", error);
+      await reportError(error, {
+        context: "shipping:sync",
+        shop: vendor.shop,
+        vendorId: vendor.id,
+      });
       return Response.json({ ok: true, warning: "Saved, but checkout hasn't been updated yet. It'll catch up." });
     }
   }

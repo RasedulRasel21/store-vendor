@@ -31,6 +31,7 @@
       "routes/api.portal.return": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/api.portal.stripe": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/api.portal.apply": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/api.portal.error": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/webhooks.returns": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/api.order-split": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/api.portal.cash": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
@@ -40,6 +41,7 @@
       "routes/proxy.apply": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/auth.login": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/auth.$": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/health": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/_index": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/app.vendors.$id_.edit": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/app.approvals._index": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
@@ -61,6 +63,7 @@
       "routes/app.agreement": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/app.settings": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/app.emails": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/app.health": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/app._index": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0"
     },
     "routes": {
@@ -259,6 +262,15 @@
           "runtime": "nodejs"
         }
       },
+      "routes/api.portal.error": {
+        "id": "routes/api.portal.error",
+        "parentId": "root",
+        "file": "app/routes/api.portal.error.jsx",
+        "path": "api/portal/error",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
       "routes/webhooks.returns": {
         "id": "routes/webhooks.returns",
         "parentId": "root",
@@ -337,6 +349,15 @@
         "parentId": "root",
         "file": "app/routes/auth.$.jsx",
         "path": "auth/*",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/health": {
+        "id": "routes/health",
+        "parentId": "root",
+        "file": "app/routes/health.jsx",
+        "path": "health",
         "config": {
           "runtime": "nodejs"
         }
@@ -542,6 +563,15 @@
           "runtime": "nodejs"
         }
       },
+      "routes/app.health": {
+        "id": "routes/app.health",
+        "parentId": "routes/app",
+        "file": "app/routes/app.health.jsx",
+        "path": "health",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
       "routes/app._index": {
         "id": "routes/app._index",
         "parentId": "routes/app",
@@ -698,6 +728,12 @@
         "file": "routes/api.portal.apply.jsx",
         "path": "api/portal/apply"
       },
+      "routes/api.portal.error": {
+        "id": "routes/api.portal.error",
+        "parentId": "root",
+        "file": "routes/api.portal.error.jsx",
+        "path": "api/portal/error"
+      },
       "routes/webhooks.returns": {
         "id": "routes/webhooks.returns",
         "parentId": "root",
@@ -752,6 +788,12 @@
         "parentId": "root",
         "file": "routes/auth.$.jsx",
         "path": "auth/*"
+      },
+      "routes/health": {
+        "id": "routes/health",
+        "parentId": "root",
+        "file": "routes/health.jsx",
+        "path": "health"
       },
       "routes/_index": {
         "id": "routes/_index",
@@ -890,6 +932,12 @@
         "file": "routes/app.emails.jsx",
         "path": "emails"
       },
+      "routes/app.health": {
+        "id": "routes/app.health",
+        "parentId": "routes/app",
+        "file": "routes/app.health.jsx",
+        "path": "health"
+      },
       "routes/app._index": {
         "id": "routes/app._index",
         "parentId": "routes/app",
@@ -1018,6 +1066,11 @@
             "path": "api/portal/apply"
           },
           {
+            "id": "routes/api.portal.error",
+            "file": "routes/api.portal.error.jsx",
+            "path": "api/portal/error"
+          },
+          {
             "id": "routes/webhooks.returns",
             "file": "routes/webhooks.returns.jsx",
             "path": "webhooks/returns"
@@ -1062,6 +1115,11 @@
             "id": "routes/auth.$",
             "file": "routes/auth.$.jsx",
             "path": "auth/*"
+          },
+          {
+            "id": "routes/health",
+            "file": "routes/health.jsx",
+            "path": "health"
           },
           {
             "id": "routes/_index",
@@ -1177,6 +1235,11 @@
                 "id": "routes/app.emails",
                 "file": "routes/app.emails.jsx",
                 "path": "emails"
+              },
+              {
+                "id": "routes/app.health",
+                "file": "routes/app.health.jsx",
+                "path": "health"
               },
               {
                 "id": "routes/app._index",

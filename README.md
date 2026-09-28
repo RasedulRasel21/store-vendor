@@ -128,6 +128,33 @@ When you're ready to set up your app in production, you can follow [our deployme
 
 When you reach the step for [setting up environment variables](https://shopify.dev/docs/apps/deployment/web#set-env-vars), you also need to set the variable `NODE_ENV=production`.
 
+## Knowing when something breaks
+
+Anything that fails — a webhook that threw, a payout that couldn't be sent, a page that
+wouldn't render, on either this app or the vendor portal — is written to the `ErrorEvent`
+table rather than to a console line that disappears when the function ends. The same fault
+is one row with a count, so a bad afternoon stays readable. Merchants see the ones that
+affected their shop, in plain words, at **Health** in the app's navigation.
+
+Two optional environment variables:
+
+| Variable | What it does |
+| --- | --- |
+| `ERROR_ALERT_WEBHOOK` | A Slack or Discord incoming webhook. Each new fault is posted there, at most once an hour per fault. Without it, faults are still recorded. |
+| `VENDOR_PORTAL_URL` | Already needed for invites; `/health` also uses it to check the portal. |
+
+### Uptime
+
+`GET /health` on both the app and the portal answers `200` when healthy and `503` when not,
+and the app's own check covers the portal at the same time — so one monitor watches both
+halves. Point any uptime service at `https://<your app>/health` and set it to check every
+five minutes; UptimeRobot and Better Stack both do this free. Treat any status other than
+`200` as down.
+
+Every probe is recorded in `UptimeCheck`, so the app's Health page shows the history
+without anyone needing an account on the monitoring service. The nightly job runs one check
+of its own, prunes probes older than 30 days, and clears out faults that have been quiet.
+
 ## Gotchas / Troubleshooting
 
 ### Database tables don't exist

@@ -1,4 +1,5 @@
 import db from "../db.server";
+import { reportError } from "./error-report.server";
 
 // StoreVendor sends every store's vendor emails through one account of ours, the way
 // Shopify apps normally do: merchants shouldn't have to hold an email provider account,
@@ -149,7 +150,11 @@ export async function sendEmail(shop, { to, subject, text, template, related }) 
     });
     return result.error ? { error: result.error } : { sent: true };
   } catch (error) {
-    console.error("Email send failed", error);
+    await reportError(error, {
+      context: "email:send",
+      shop,
+      details: { template, provider: account.provider },
+    });
     await db.emailMessage.update({
       where: { id: message.id },
       data: { status: "FAILED", error: "Couldn't reach the email provider" },

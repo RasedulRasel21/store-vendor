@@ -1,4 +1,5 @@
 import db from "../db.server";
+import { reportError } from "./error-report.server";
 
 // Shopify retries a webhook when the response is slow, fails, or never arrives, and the same
 // delivery keeps its id across retries. The id is claimed before the work runs and given back
@@ -6,7 +7,12 @@ import db from "../db.server";
 export async function handleWebhookOnce({ webhookId, shop, topic }, work) {
   // No id means we can't tell deliveries apart, so do the work and rely on it being idempotent.
   if (!webhookId) {
-    await work();
+    try {
+      await work();
+    } catch (error) {
+      await reportError(error, { context: `webhook:${topic}`, shop });
+      throw error;
+    }
     return new Response();
   }
 
@@ -24,6 +30,9 @@ export async function handleWebhookOnce({ webhookId, shop, topic }, work) {
     await work();
   } catch (error) {
     await db.webhookEvent.delete({ where: { id: webhookId } }).catch(() => {});
+    // Shopify will try again, and often the retry succeeds, but a webhook that keeps
+    // failing is how orders quietly go missing. It gets written down either way.
+    await reportError(error, { context: `webhook:${topic}`, shop, details: { webhookId } });
     throw error;
   }
 

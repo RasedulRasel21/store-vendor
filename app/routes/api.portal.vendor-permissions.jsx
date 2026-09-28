@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import db from "../db.server";
 import { unauthenticated } from "../shopify.server";
 import { approveProductSubmission } from "../models/product-submission.server";
+import { reportError } from "../models/error-report.server";
 
 // What a vendor may do, and the one permission that has to act rather than just be read:
 // a trusted vendor's product going into the store without waiting to be reviewed. That
@@ -83,7 +84,12 @@ export const action = async ({ request }) => {
       }
       return Response.json({ approved: true, warning: result.warning ?? null });
     } catch (error) {
-      console.error(`Auto-approve failed for ${submission.id}`, error);
+      await reportError(error, {
+        context: "product:auto-approve",
+        shop: vendor.shop,
+        vendorId: vendor.id,
+        details: { submissionId: submission.id },
+      });
       // Left waiting for the merchant, which is the safe way to fail.
       return Response.json({ approved: false });
     }

@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import db from "../db.server";
 import { unauthenticated } from "../shopify.server";
 import { markCashCollected } from "../models/vendor-order.server";
+import { reportError } from "../models/error-report.server";
 
 // A vendor who ships their own cash-on-delivery order takes the money at the door, so
 // they're the one who knows it arrived. Marking it paid has to happen in Shopify, which
@@ -50,7 +51,12 @@ export const action = async ({ request }) => {
     if (result.error) return Response.json({ error: result.error }, { status: 400 });
     return Response.json({ ok: true });
   } catch (error) {
-    console.error("Marking cash collected failed", error);
+    await reportError(error, {
+      context: "order:cash-collected",
+      shop: vendorOrder.shop,
+      vendorId,
+      details: { vendorOrderId: vendorOrder.id },
+    });
     return Response.json({ error: "The store couldn't be reached. Try again." }, { status: 502 });
   }
 };

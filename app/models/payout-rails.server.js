@@ -9,6 +9,7 @@ import {
   vendorAccountStatus,
 } from "./payout-rails/stripe.server";
 import { cancelPayout, markPayoutPaid } from "./payout.server";
+import { reportError } from "./error-report.server";
 
 // Automatic payout rails. Money always moves from the merchant's own PayPal or Stripe
 // account; the app holds encrypted credentials, never funds. A payout goes through a rail
@@ -130,7 +131,14 @@ export async function sendPayout(shop, payoutId, actor) {
         ? await sendPaypal(credentials.paypal, { payoutId: payout.id, receiver: destination, amount, currency, note })
         : await sendStripe(credentials.stripe, { payoutId: payout.id, destination, amount, currency, description: note });
   } catch (error) {
-    console.error(`${rail} send failed`, error);
+    // Money that didn't move is the one failure a merchant must never find out about by
+    // accident, so it goes on their health page as well as in the log.
+    await reportError(error, {
+      context: `payout:${rail.toLowerCase()}`,
+      shop,
+      vendorId: payout.vendorId,
+      details: { payoutId: payout.id, amount, currency },
+    });
     return { error: `Couldn't reach ${rail === "PAYPAL" ? "PayPal" : "Stripe"}. Nothing was sent; try again.` };
   }
   if (result.error) return { error: result.error };
