@@ -28,6 +28,7 @@ import { listingRules, RULE_LIMITS, updateListingRules } from "../models/listing
 import { syncVendorShipping } from "../models/delivery-profile.server";
 import { ratesAreStale, ratesMatchCurrency } from "../models/fx.server";
 import { SELLER_PLACEHOLDER } from "../models/invoice.server";
+import { checkEmailAccount, emailAccount, sendEmail } from "../models/email.server";
 import { connectPaypal, connectStripe, disconnectRail } from "../models/payout-rails.server";
 import { PAYPAL_CURRENCIES } from "../models/payout-rails/paypal.server";
 import db from "../db.server";
@@ -170,6 +171,9 @@ export const loader = async ({ request }) => {
     email: {
       sender: settings.businessName || settings.shopName || session.shop.replace(/\.myshopify\.com$/, ""),
       replyTo: settings.shopEmail ?? null,
+      // Whether mail is actually going out, which is the one thing a merchant can't tell
+      // from the log alone: a message sits there either way.
+      working: Boolean(emailAccount()),
     },
     // The key itself never leaves the server; only whether one is connected.
     labels: {
@@ -365,6 +369,35 @@ export const action = async ({ request }) => {
   if (intent === "fulfillmentDays") {
     const result = await updateFulfillmentDays(session.shop, formData.get("days"));
     return { intent, error: result.error ?? null, saved: Boolean(result.days) };
+  }
+
+  if (intent === "testEmail") {
+    // Proof it works, end to end, to the address the merchant already reads. Their own
+    // contact address only: this must not become a way of mailing anyone else.
+    const settings = await db.shopSettings.findUnique({
+      where: { shop: session.shop },
+      select: { shopEmail: true },
+    });
+    if (!settings?.shopEmail) {
+      return { intent, testError: "Add your store's contact address first, further up this page." };
+    }
+
+    const account = await checkEmailAccount();
+    if (!account.ok) return { intent, testError: account.error };
+
+    const result = await sendEmail(session.shop, {
+      to: settings.shopEmail,
+      subject: "Your marketplace can send email",
+      text: [
+        "This is the test from your app's settings, and it arrived, so your sellers will get theirs too.",
+        "They are emailed when they are approved, when an order comes in, when a product is approved or sent back, and when their money moves. You are emailed the things only you can act on.",
+        "Every message is kept in the email log in the app.",
+      ].join("\n\n"),
+      template: "test",
+    });
+
+    if (result.error) return { intent, testError: result.error };
+    return { intent, testSent: settings.shopEmail };
   }
 
   if (intent === "syncCollections") {
@@ -1236,17 +1269,49 @@ export default function Settings() {
         </Form>
       </s-section>
 
-      <s-section heading="Vendor emails">
+      <s-section heading="Emails">
         <s-stack direction="block" gap="base">
           <s-paragraph color="subdued">
-            Vendors are emailed when their money moves. StoreVendor sends these for you, so there
-            {"'"}s nothing to set up: they go out as <s-text type="strong">{email.sender}</s-text>,
-            and replies come back to {email.replyTo ? email.replyTo : "your store's contact address"}.
+            Your sellers are emailed when they{"'"}re approved, when an order comes in, when a
+            product is approved or sent back, when a customer wants to return something, and
+            whenever their money moves. You{"'"}re emailed the things only you can act on:
+            someone applying to sell, a product waiting for approval, a payout asked for, and a
+            seller flagging a problem with an order.
           </s-paragraph>
-          <s-stack direction="inline">
+          <s-paragraph color="subdued">
+            StoreVendor sends them for you, so there{"'"}s nothing to set up: they go out as{" "}
+            <s-text type="strong">{email.sender}</s-text>, and replies come back to{" "}
+            {email.replyTo ? email.replyTo : "your store's contact address"}.
+          </s-paragraph>
+
+          {!email.working && (
+            <s-banner tone="warning" heading="Email isn't switched on yet">
+              Nothing is being sent. Every message is still written to the log below, so nothing
+              is lost, and they{"'"}ll start arriving as soon as it{"'"}s on.
+            </s-banner>
+          )}
+          {actionData?.intent === "testEmail" && actionData.testSent && (
+            <s-banner tone="success" heading="Sent">
+              Check {actionData.testSent}. If it{"'"}s not there in a minute, look in the spam
+              folder, then at the log below.
+            </s-banner>
+          )}
+          {actionData?.intent === "testEmail" && actionData.testError && (
+            <s-banner tone="critical" heading="It didn't go">
+              {actionData.testError}
+            </s-banner>
+          )}
+
+          <s-stack direction="inline" gap="small">
             <s-button variant="secondary" href="/app/emails">
               Email log
             </s-button>
+            <Form method="post">
+              <input type="hidden" name="intent" value="testEmail" />
+              <s-button type="submit" loading={submittingIntent === "testEmail"}>
+                Send me a test email
+              </s-button>
+            </Form>
           </s-stack>
         </s-stack>
       </s-section>

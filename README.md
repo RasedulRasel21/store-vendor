@@ -128,6 +128,31 @@ When you're ready to set up your app in production, you can follow [our deployme
 
 When you reach the step for [setting up environment variables](https://shopify.dev/docs/apps/deployment/web#set-env-vars), you also need to set the variable `NODE_ENV=production`.
 
+## Email
+
+Every store's mail goes out through one account of ours, the way Shopify apps normally do:
+a merchant should not have to hold an email provider account, and most do not. Three
+variables, set once for the whole app:
+
+| Variable | Value |
+| --- | --- |
+| `EMAIL_PROVIDER` | `RESEND` (or `POSTMARK`) |
+| `EMAIL_API_KEY` | that provider's key |
+| `EMAIL_FROM` | an address on a domain verified with the provider |
+
+Each message still goes out under the store's own name, with replies going back to the
+store's contact address, so a vendor sees who it is really from. Without the variables
+nothing is sent and every message is written to the email log instead, so nothing is lost
+and switching it on later loses nothing either.
+
+Getting started with Resend: create an API key, then add and verify a sending domain. Until
+a domain is verified Resend only delivers to the address the account was opened with, which
+is enough to see it working — the **Send me a test email** button under Settings → Emails
+goes to the store's own contact address and reports exactly what the provider said.
+
+The portal has no email account of its own. It asks the app through
+`/api/portal/notify`, so there is one sender, one set of words and one log.
+
 ## Knowing when something breaks
 
 Anything that fails — a webhook that threw, a payout that couldn't be sent, a page that
