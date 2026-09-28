@@ -25,6 +25,7 @@ import {
 } from "../models/settings.server";
 import { applyUrl, ensureApplyHandle, updateApplicationSettings } from "../models/application.server";
 import { listingRules, RULE_LIMITS, updateListingRules } from "../models/listing-rules.server";
+import { syncVendorShipping } from "../models/delivery-profile.server";
 import { ratesAreStale, ratesMatchCurrency } from "../models/fx.server";
 import { SELLER_PLACEHOLDER } from "../models/invoice.server";
 import { connectPaypal, connectStripe, disconnectRail } from "../models/payout-rails.server";
@@ -146,6 +147,10 @@ export const loader = async ({ request }) => {
       base: storeBase,
       directoryUrl: storeBase ? `${storeBase}/apps/vendors` : null,
       exampleUrl: storeBase && exampleVendor ? `${storeBase}/apps/vendors/${exampleVendor.handle}` : null,
+    },
+    vendorShipping: {
+      enabled: settings.vendorShippingRates,
+      withRates: await db.vendorShippingRate.groupBy({ by: ["vendorId"], where: { shop: session.shop } }).then((rows) => rows.length),
     },
     rules: {
       ...listingRules(settings),
@@ -291,6 +296,29 @@ export const action = async ({ request }) => {
     return { intent, errors: result.errors ?? null, saved: Boolean(result.saved) };
   }
 
+  if (intent === "vendorShipping") {
+    const on = formData.get("vendorShippingRates") === "on";
+    await db.shopSettings.upsert({
+      where: { shop: session.shop },
+      update: { vendorShippingRates: on },
+      create: { shop: session.shop, vendorShippingRates: on },
+    });
+
+    // Turning it on does nothing until each vendor's rates are actually in Shopify.
+    let pushed = 0;
+    if (on) {
+      const vendors = await db.vendor.findMany({
+        where: { shop: session.shop, status: "ACTIVE", shippingRates: { some: {} } },
+        select: { id: true },
+      });
+      for (const vendor of vendors) {
+        const result = await syncVendorShipping(admin, session.shop, vendor.id);
+        if (result.ok) pushed += 1;
+      }
+    }
+    return { intent, saved: true, pushed };
+  }
+
   if (intent === "listingRules") {
     const result = await updateListingRules(session.shop, {
       minImages: formData.get("minImages"),
@@ -387,6 +415,7 @@ export default function Settings() {
     applications,
     storefront,
     rules,
+    vendorShipping,
   } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
@@ -454,6 +483,30 @@ export default function Settings() {
                 variant="primary"
                 loading={submittingIntent === "commission"}
               >
+                Save
+              </s-button>
+            </s-stack>
+          </s-stack>
+        </Form>
+      </s-section>
+
+      <s-section heading="Who sets the shipping">
+        <Form method="post">
+          <input type="hidden" name="intent" value="vendorShipping" />
+          <s-stack direction="block" gap="base">
+            <s-paragraph color="subdued">
+              Off, every product uses your own shipping rates, whoever sells it. On, each
+              vendor sets what they charge to deliver and Shopify adds their rates together
+              when a customer buys from more than one of them.
+            </s-paragraph>
+            <s-checkbox
+              label="Vendors set their own delivery rates"
+              name="vendorShippingRates"
+              defaultChecked={vendorShipping.enabled}
+              details={`${vendorShipping.withRates} ${vendorShipping.withRates === 1 ? "vendor has" : "vendors have"} set rates so far. A vendor with none keeps using yours.`}
+            ></s-checkbox>
+            <s-stack direction="inline">
+              <s-button type="submit" loading={submittingIntent === "vendorShipping"}>
                 Save
               </s-button>
             </s-stack>

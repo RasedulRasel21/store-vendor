@@ -23,6 +23,7 @@
       "routes/webhooks.orders.edited": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/api.portal.agreement": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/webhooks.collections": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
+      "routes/api.portal.shipping": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/webhooks.compliance": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/api.cron.reconcile": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
       "routes/api.portal.fulfill": "nodejs_eyJydW50aW1lIjoibm9kZWpzIn0",
@@ -182,6 +183,15 @@
         "parentId": "root",
         "file": "app/routes/webhooks.collections.jsx",
         "path": "webhooks/collections",
+        "config": {
+          "runtime": "nodejs"
+        }
+      },
+      "routes/api.portal.shipping": {
+        "id": "routes/api.portal.shipping",
+        "parentId": "root",
+        "file": "app/routes/api.portal.shipping.jsx",
+        "path": "api/portal/shipping",
         "config": {
           "runtime": "nodejs"
         }
@@ -640,6 +650,12 @@
         "file": "routes/webhooks.collections.jsx",
         "path": "webhooks/collections"
       },
+      "routes/api.portal.shipping": {
+        "id": "routes/api.portal.shipping",
+        "parentId": "root",
+        "file": "routes/api.portal.shipping.jsx",
+        "path": "api/portal/shipping"
+      },
       "routes/webhooks.compliance": {
         "id": "routes/webhooks.compliance",
         "parentId": "root",
@@ -960,6 +976,11 @@
             "id": "routes/webhooks.collections",
             "file": "routes/webhooks.collections.jsx",
             "path": "webhooks/collections"
+          },
+          {
+            "id": "routes/api.portal.shipping",
+            "file": "routes/api.portal.shipping.jsx",
+            "path": "api/portal/shipping"
           },
           {
             "id": "routes/webhooks.compliance",
