@@ -79,25 +79,33 @@ export function rateZones(rates) {
   }));
 }
 
-// A zone per rate. A rate with no countries covers the rest of the world, which Shopify
-// expresses as "all countries" with the others already claimed by their own zones.
+// One zone per set of countries, with every rate for those countries inside it.
+//
+// A country can only belong to one zone, so a vendor who charges 60 inside Dhaka and 120
+// outside it can't have two zones both claiming Bangladesh — Shopify silently gives the
+// country to one of them and leaves the other covering nowhere. Both prices belong in
+// the same zone instead, and the customer picks at checkout, which is also how Shopify's
+// own multi-rate shipping reads.
 function zonesToCreate(rates, currencyCode) {
-  return rates.map((rate) => ({
-    name: rate.countryCodes.length
-      ? `${rate.name} — ${rate.countryCodes.join(", ").slice(0, 60)}`
-      : `${rate.name} — everywhere else`,
-    countries: rate.countryCodes.length
-      ? rate.countryCodes.map((code) => ({ code }))
-      : [{ restOfWorld: true }],
-    methodDefinitionsToCreate: [
-      {
-        name: rate.name,
-        active: true,
-        rateDefinition: {
-          price: { amount: Number(rate.price).toFixed(2), currencyCode },
-        },
+  const byCountries = new Map();
+
+  for (const rate of rates) {
+    const codes = [...rate.countryCodes].sort();
+    const key = codes.join(",");
+    if (!byCountries.has(key)) byCountries.set(key, { codes, rates: [] });
+    byCountries.get(key).rates.push(rate);
+  }
+
+  return [...byCountries.values()].map(({ codes, rates: zoneRates }) => ({
+    name: codes.length ? codes.join(", ").slice(0, 60) : "Everywhere else",
+    countries: codes.length ? codes.map((code) => ({ code })) : [{ restOfWorld: true }],
+    methodDefinitionsToCreate: zoneRates.map((rate) => ({
+      name: rate.name,
+      active: true,
+      rateDefinition: {
+        price: { amount: Number(rate.price).toFixed(2), currencyCode },
       },
-    ],
+    })),
   }));
 }
 
@@ -229,9 +237,18 @@ export async function saveVendorRates(shop, vendorId, rows) {
 
   if (Object.keys(errors).length) return { errors };
 
-  // At most one catch-all, or Shopify would have two zones claiming the same countries.
-  if (clean.filter((rate) => !rate.countryCodes.length).length > 1) {
-    return { errors: { form: "Only one rate can cover everywhere else." } };
+  // Rates covering the same countries end up as choices in one zone, so duplicates are
+  // fine — but two with the same name in the same zone would be indistinguishable at
+  // checkout.
+  const seen = new Set();
+  for (const rate of clean) {
+    const key = `${[...rate.countryCodes].sort().join(",")}|${rate.name.toLowerCase()}`;
+    if (seen.has(key)) {
+      return {
+        errors: { form: `Two rates called "${rate.name}" cover the same places. Give them different names.` },
+      };
+    }
+    seen.add(key);
   }
 
   await db.$transaction([
