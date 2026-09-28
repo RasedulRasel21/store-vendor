@@ -425,6 +425,18 @@ export function notifyMerchantProductSubmitted(shop, submissionId, { vendorName,
   });
 }
 
+// A vendor changing twenty prices at once is one thing that happened, not twenty.
+export function notifyMerchantProductsChanged(shop, { vendorName, count }) {
+  return emailMerchant(shop, {
+    subject: `${vendorName} has changed ${count} ${count === 1 ? "product" : "products"}`,
+    lines: [
+      `${vendorName} has changed the price or the stock on ${count} ${count === 1 ? "product" : "products"} already on sale.`,
+      "Nothing in your shop changes until you approve it. Product approvals are in the app.",
+    ],
+    template: "merchant.products_changed",
+  });
+}
+
 export function notifyMerchantPayoutRequested(shop, payoutId, { vendorName, amount }) {
   return emailMerchant(shop, {
     subject: `${vendorName} has asked for ${amount}`,

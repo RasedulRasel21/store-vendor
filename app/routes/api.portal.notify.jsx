@@ -5,6 +5,7 @@ import {
   notifyMerchantChangeRequested,
   notifyMerchantOrderIssue,
   notifyMerchantProductSubmitted,
+  notifyMerchantProductsChanged,
 } from "../models/notifications.server";
 
 // Emails the portal asks for.
@@ -88,6 +89,14 @@ export const action = async ({ request }) => {
       title: submission.title,
       edit: body?.edit === true,
     });
+    return Response.json({ ok: true });
+  }
+
+  if (intent === "products-changed") {
+    // A count rather than a list: the merchant is being told to go and look, and the
+    // approvals page is where the detail lives.
+    const count = Math.min(Math.max(Number(body?.count) || 0, 1), 200);
+    await notifyMerchantProductsChanged(vendor.shop, { vendorName: vendor.name, count });
     return Response.json({ ok: true });
   }
 
