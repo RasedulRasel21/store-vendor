@@ -933,6 +933,10 @@ model VendorShippingRate {
   // The zone this covers, as ISO alpha-2 codes. Empty means everywhere else.
   countryCodes String[]
   price        Decimal  @db.Decimal(12, 2)
+  // When this rate applies, by what the order is worth. Either can stand alone: "at
+  // least 5000" makes a free-shipping threshold, "at most 4999" the rate below it.
+  minOrderTotal Decimal? @db.Decimal(12, 2)
+  maxOrderTotal Decimal? @db.Decimal(12, 2)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

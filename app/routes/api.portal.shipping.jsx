@@ -52,6 +52,8 @@ export const action = async ({ request }) => {
         name: rate.name,
         price: rate.price.toString(),
         countryCodes: rate.countryCodes,
+        minOrderTotal: rate.minOrderTotal === null ? "" : rate.minOrderTotal.toString(),
+        maxOrderTotal: rate.maxOrderTotal === null ? "" : rate.maxOrderTotal.toString(),
       })),
     });
   }

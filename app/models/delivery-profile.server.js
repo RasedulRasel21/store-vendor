@@ -99,13 +99,30 @@ function zonesToCreate(rates, currencyCode) {
   return [...byCountries.values()].map(({ codes, rates: zoneRates }) => ({
     name: codes.length ? codes.join(", ").slice(0, 60) : "Everywhere else",
     countries: codes.length ? codes.map((code) => ({ code })) : [{ restOfWorld: true }],
-    methodDefinitionsToCreate: zoneRates.map((rate) => ({
-      name: rate.name,
-      active: true,
-      rateDefinition: {
-        price: { amount: Number(rate.price).toFixed(2), currencyCode },
-      },
-    })),
+    methodDefinitionsToCreate: zoneRates.map((rate) => {
+      // "At least 5000" and "at most 4999" are how a free-shipping threshold is built:
+      // one rate above the line, another below it. Shopify compares the order total.
+      const priceConditionsToCreate = [];
+      if (rate.minOrderTotal !== null && rate.minOrderTotal !== undefined) {
+        priceConditionsToCreate.push({
+          operator: "GREATER_THAN_OR_EQUAL_TO",
+          criteria: { amount: Number(rate.minOrderTotal).toFixed(2), currencyCode },
+        });
+      }
+      if (rate.maxOrderTotal !== null && rate.maxOrderTotal !== undefined) {
+        priceConditionsToCreate.push({
+          operator: "LESS_THAN_OR_EQUAL_TO",
+          criteria: { amount: Number(rate.maxOrderTotal).toFixed(2), currencyCode },
+        });
+      }
+
+      return {
+        name: rate.name,
+        active: true,
+        rateDefinition: { price: { amount: Number(rate.price).toFixed(2), currencyCode } },
+        ...(priceConditionsToCreate.length ? { priceConditionsToCreate } : {}),
+      };
+    }),
   }));
 }
 
@@ -228,11 +245,31 @@ export async function saveVendorRates(shop, vendorId, rows) {
       ),
     ];
 
+    const amount = (value) => {
+      const text = String(value ?? "").trim();
+      if (!text) return null;
+      const number = Number(text);
+      return Number.isFinite(number) && number >= 0 ? number : NaN;
+    };
+    const min = amount(row?.minOrderTotal);
+    const max = amount(row?.maxOrderTotal);
+
     if (!name) errors[`rates.${index}.name`] = "Give this rate a name customers will understand";
     if (!Number.isFinite(price) || price < 0) errors[`rates.${index}.price`] = "Use a price of zero or more";
+    if (Number.isNaN(min)) errors[`rates.${index}.minOrderTotal`] = "Use an amount, or leave it empty";
+    if (Number.isNaN(max)) errors[`rates.${index}.maxOrderTotal`] = "Use an amount, or leave it empty";
+    if (min !== null && max !== null && !Number.isNaN(min) && !Number.isNaN(max) && min > max) {
+      errors[`rates.${index}.maxOrderTotal`] = "This has to be more than the smallest order";
+    }
     if (Object.keys(errors).length) return;
 
-    clean.push({ name, price: price.toFixed(2), countryCodes });
+    clean.push({
+      name,
+      price: price.toFixed(2),
+      countryCodes,
+      minOrderTotal: min === null ? null : min.toFixed(2),
+      maxOrderTotal: max === null ? null : max.toFixed(2),
+    });
   });
 
   if (Object.keys(errors).length) return { errors };
@@ -242,7 +279,12 @@ export async function saveVendorRates(shop, vendorId, rows) {
   // checkout.
   const seen = new Set();
   for (const rate of clean) {
-    const key = `${[...rate.countryCodes].sort().join(",")}|${rate.name.toLowerCase()}`;
+    const key = [
+      [...rate.countryCodes].sort().join(","),
+      rate.name.toLowerCase(),
+      rate.minOrderTotal ?? "",
+      rate.maxOrderTotal ?? "",
+    ].join("|");
     if (seen.has(key)) {
       return {
         errors: { form: `Two rates called "${rate.name}" cover the same places. Give them different names.` },
@@ -255,7 +297,15 @@ export async function saveVendorRates(shop, vendorId, rows) {
     db.vendorShippingRate.deleteMany({ where: { shop, vendorId } }),
     ...clean.map((rate) =>
       db.vendorShippingRate.create({
-        data: { shop, vendorId, name: rate.name, price: rate.price, countryCodes: rate.countryCodes },
+        data: {
+          shop,
+          vendorId,
+          name: rate.name,
+          price: rate.price,
+          countryCodes: rate.countryCodes,
+          minOrderTotal: rate.minOrderTotal,
+          maxOrderTotal: rate.maxOrderTotal,
+        },
       }),
     ),
   ]);
