@@ -133,6 +133,46 @@ async function vendorVariantIds(admin, shop, vendorId) {
   return { variantIds, products: links.length };
 }
 
+/**
+ * Puts one product into its vendor's delivery profile.
+ *
+ * A variant belongs to exactly one profile, and a new one lands in the store's own. So a
+ * product approved today would be posted at the store's rates rather than its seller's,
+ * until the vendor happened to save their shipping again. This runs on approval instead,
+ * and on an edit too, because an edit can add a variant that would otherwise be left out.
+ *
+ * Cheap on purpose: it associates the variants and leaves the zones alone.
+ */
+export async function attachProductToShipping(admin, shop, vendorId, productId) {
+  if (!productId) return { skipped: "No product" };
+
+  const [settings, vendor] = await Promise.all([
+    db.shopSettings.findUnique({ where: { shop }, select: { vendorShippingRates: true } }),
+    db.vendor.findFirst({ where: { id: vendorId, shop }, select: { deliveryProfileId: true } }),
+  ]);
+
+  if (!settings?.vendorShippingRates) return { skipped: "The store sets the shipping" };
+  // No profile means this vendor has set no rates of their own, so the store's own apply,
+  // which is where the product already is.
+  if (!vendor?.deliveryProfileId) return { skipped: "This vendor has no rates of their own" };
+
+  const response = await admin.graphql(VARIANTS_QUERY, { variables: { ids: [productId] } });
+  const { data } = await response.json();
+  const variantIds = (data?.nodes ?? [])
+    .filter(Boolean)
+    .flatMap((product) => (product.variants?.nodes ?? []).map((variant) => variant.id));
+  if (!variantIds.length) return { skipped: "No variants" };
+
+  const updated = await admin.graphql(UPDATE_PROFILE, {
+    variables: { id: vendor.deliveryProfileId, profile: { variantsToAssociate: variantIds } },
+  });
+  const { data: result } = await updated.json();
+  const failed = result?.deliveryProfileUpdate?.userErrors?.[0]?.message;
+  if (failed) return { error: failed };
+
+  return { ok: true, variants: variantIds.length };
+}
+
 export function vendorZones(shop, vendorId) {
   return db.vendorShippingZone.findMany({
     where: { shop, vendorId },

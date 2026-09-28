@@ -1,6 +1,7 @@
 import db from "../db.server";
 import { getShopCollections } from "./collection.server";
 import { reportError } from "./error-report.server";
+import { attachProductToShipping } from "./delivery-profile.server";
 import { sanitizeDescription } from "../utils/sanitize-description.server";
 import { SUBMISSION_REVIEW_STATUSES } from "../utils/vendor-display";
 
@@ -381,7 +382,29 @@ export async function approveProductSubmission(admin, shop, id, actor) {
     }),
   ]);
 
+  // A variant belongs to one delivery profile, and a new one starts in the store's own, so
+  // without this the vendor's own rates wouldn't apply to what they just had approved.
+  await putInVendorProfile(admin, shop, submission.vendorId, productId);
+
   return { productId, warning };
+}
+
+// Never allowed to fail an approval: the product is live either way, and shipping that
+// didn't update is worth recording rather than undoing the approval over.
+async function putInVendorProfile(admin, shop, vendorId, productId) {
+  try {
+    const result = await attachProductToShipping(admin, shop, vendorId, productId);
+    if (result.error) {
+      await reportError(result.error, {
+        context: "shipping:attach-product",
+        shop,
+        vendorId,
+        details: { productId },
+      });
+    }
+  } catch (error) {
+    await reportError(error, { context: "shipping:attach-product", shop, vendorId, details: { productId } });
+  }
 }
 
 // Applies a vendor's edit to the product that's already live in the store.
@@ -471,6 +494,9 @@ export async function approveProductEdit(admin, shop, id, actor) {
       },
     }),
   ]);
+
+  // An edit can add a variant, and a new variant starts in the store's own profile.
+  await putInVendorProfile(admin, shop, submission.vendorId, submission.productId);
 
   return { ok: true };
 }
