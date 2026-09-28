@@ -8,6 +8,7 @@ import { holdOf, vendorBalances } from "../models/ledger.server";
 import { formatMoney } from "../utils/money";
 import { OVERDUE_WHERE } from "../models/vendor-order.server";
 import { formatDate } from "../utils/vendor-display";
+import { countWaitingDataRequests } from "../models/privacy.server";
 
 // How far back a problem still counts as something to act on today. Worked out per
 // request: a server that stays up for a week would otherwise keep asking about the same
@@ -20,7 +21,7 @@ export const loader = async ({ request }) => {
     getVendorOverview(session.shop),
     getShopSettings(session.shop),
   ]);
-  const [balances, payoutsToSend, payoutRequests, bounced, overdueOrders, unpayable, faults] =
+  const [balances, payoutsToSend, payoutRequests, bounced, overdueOrders, unpayable, faults, privacyWaiting] =
     await Promise.all([
       vendorBalances(session.shop, { hold: holdOf(settings) }),
       db.payout.count({ where: { shop: session.shop, status: "PENDING" } }),
@@ -41,6 +42,9 @@ export const loader = async ({ request }) => {
       db.errorEvent.count({
         where: { shop: session.shop, resolvedAt: null, lastSeenAt: { gte: recently() } },
       }),
+      // A customer asked what the store holds on them, and the merchant has 30 days to
+      // answer. Nothing else on this page has a legal clock on it.
+      countWaitingDataRequests(session.shop),
     ]);
   const availableToPay = [...balances.values()].reduce(
     (sum, balance) => sum + Math.max(0, balance.available),
@@ -58,6 +62,7 @@ export const loader = async ({ request }) => {
       overdueOrders,
       waitingOnDetails,
       faults,
+      privacyWaiting,
       fulfillmentDays: settings.fulfillmentDays,
     },
     availableToPay: formatMoney(availableToPay, settings.currencyCode ?? "USD"),
@@ -121,6 +126,16 @@ export default function Index() {
           : `${alerts.waitingOnDetails} vendors have earned money but haven't added payout details.`,
       action: "See who",
       href: "/app/payouts",
+    },
+    alerts.privacyWaiting && {
+      id: "privacy",
+      tone: "critical",
+      text:
+        alerts.privacyWaiting === 1
+          ? "A customer has asked what data you hold on them. You have 30 days to answer."
+          : `${alerts.privacyWaiting} customers have asked what data you hold on them. You have 30 days to answer.`,
+      action: "Open privacy requests",
+      href: "/app/privacy",
     },
     alerts.faults && {
       id: "faults",

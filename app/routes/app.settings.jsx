@@ -1251,6 +1251,21 @@ export default function Settings() {
         </s-stack>
       </s-section>
 
+      <s-section heading="Customer privacy">
+        <s-stack direction="block" gap="base">
+          <s-paragraph color="subdued">
+            When a customer asks what data your store holds, or asks to be forgotten, Shopify tells
+            every app you use. This one gathers what it has, or deletes it, and leaves you the
+            answer to pass on.
+          </s-paragraph>
+          <s-stack direction="inline">
+            <s-button variant="secondary" href="/app/privacy">
+              Privacy requests
+            </s-button>
+          </s-stack>
+        </s-stack>
+      </s-section>
+
       <s-section heading="Shipping labels">
         <s-stack direction="block" gap="base">
           <s-paragraph color="subdued">

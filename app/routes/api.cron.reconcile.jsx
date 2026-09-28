@@ -11,6 +11,7 @@ import { syncRecentOrders } from "../models/vendor-order.server";
 import { pruneWebhookEvents } from "../models/webhook-event.server";
 import { pruneErrorEvents, reportError } from "../models/error-report.server";
 import { pruneUptimeChecks, runHealthCheck } from "../models/health.server";
+import { prunePrivacyData } from "../models/privacy.server";
 
 // Webhooks can be missed: the app can be down, a deploy can be mid-flight, or Shopify can
 // give up retrying. Once a night every shop's recent orders are read again, which fills in
@@ -110,10 +111,13 @@ export const loader = async ({ request }) => {
     );
   }
 
-  const [webhooks, errors, uptime] = await Promise.all([
+  const [webhooks, errors, uptime, privacy] = await Promise.all([
     pruneWebhookEvents(),
     pruneErrorEvents(),
     pruneUptimeChecks(),
+    // A copy of someone's details gathered for a data request is deleted once the 30 days
+    // the merchant had to answer are up.
+    prunePrivacyData(),
   ]);
   console.log(
     `Reconciled ${shops.length} shops, pruned ${webhooks.count} webhook, ` +
@@ -126,6 +130,7 @@ export const loader = async ({ request }) => {
     prunedWebhookEvents: webhooks.count,
     prunedErrorEvents: errors.count,
     prunedUptimeChecks: uptime.count,
+    clearedPrivacyData: privacy.count,
     results,
   });
 };

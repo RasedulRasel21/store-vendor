@@ -963,6 +963,31 @@ model VendorShippingRate {
   @@index([zoneId])
 }
 
+// Shopify's privacy webhooks, and what was done about each one. A record that the law was
+// answered is part of answering it: "we deleted it" is worth nothing without a date.
+model PrivacyRequest {
+  id   String @id @default(cuid())
+  shop String
+  // CUSTOMER_DATA, CUSTOMER_REDACT or SHOP_REDACT.
+  type String
+  // Shopify's own id for the customer and the request, so one can be matched to the other.
+  customerId    String?
+  customerEmail String?
+  requestId     String?
+  // For a data request: what we hold about that customer, ready for the merchant to hand
+  // over. Deleted once the 30 days Shopify allows are up, so a copy of someone's details
+  // doesn't sit here for ever.
+  data Json?
+  // What happened, in a line: "3 orders, details removed".
+  summary     String?
+  receivedAt  DateTime  @default(now())
+  completedAt DateTime?
+  // Cleared by the merchant once they've handed the data over.
+  acknowledgedAt DateTime?
+
+  @@index([shop, receivedAt])
+}
+
 // Something that went wrong, in either half of the system. The same fault happening a
 // thousand times is one row with a count, so a bad afternoon doesn't fill the database and
 // the list stays readable.
