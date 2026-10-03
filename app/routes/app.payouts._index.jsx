@@ -15,6 +15,8 @@ import {
 } from "../models/payout.server";
 import { holdLabel, holdOf } from "../models/ledger.server";
 import { issueMonthForEveryone, previousMonth } from "../models/invoice.server";
+import { requireFeature } from "../models/plan.server";
+import { FEATURES } from "../utils/plans";
 import {
   autoSend,
   connectedRails,
@@ -138,12 +140,18 @@ export const action = async ({ request }) => {
       missingDetails: outcome.missingDetails,
     };
   } else if (intent === "send") {
+    const locked = await requireFeature(session.shop, FEATURES.PAYOUT_RAILS);
+    if (locked) return { intent, error: locked.error };
+
     const sent = await sendPayout(session.shop, payoutId, ACTOR);
     return { intent, error: sent.error ?? null, ok: Boolean(sent.ok), settled: sent.settled ?? false };
   } else if (intent === "check") {
     const checked = await refreshPayout(session.shop, payoutId);
     return { intent, error: checked.error ?? null, ok: !checked.error, outcome: checked.outcome ?? null };
   } else if (intent === "invoiceAll") {
+    const locked = await requireFeature(session.shop, FEATURES.INVOICES);
+    if (locked) return { intent, error: locked.error };
+
     const outcome = await issueMonthForEveryone(session.shop, previousMonth());
     return { intent, issued: outcome.issued.length, error: outcome.failed.join(" ") || null };
   } else if (intent === "sent") {

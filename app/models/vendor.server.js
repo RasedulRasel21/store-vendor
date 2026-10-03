@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import db from "../db.server";
 import { parseCommission } from "../utils/commission";
 import { SHIPPING_MODES, VENDOR_STATUSES } from "../utils/vendor-display";
+import { nextPlanUp, vendorAllowance } from "./plan.server";
 import {
   notifyVendorApproved,
   notifyVendorInvited,
@@ -159,6 +160,14 @@ export function getVendor(shop, id) {
 
 // Vendors added by the merchant are approved immediately. The owner's invite link
 // is created from the vendor page so the one-time token never travels in a URL.
+// Said the same way wherever the limit is reached, and it always names the way out.
+function planFullMessage(room) {
+  const next = nextPlanUp(room.plan.key);
+  return next
+    ? `Your ${room.plan.name} plan covers ${room.limit} vendors and you have ${room.used}. ${next.name} takes ${next.vendorLimit} — change plan in Settings.`
+    : `Your plan covers ${room.limit} vendors and you have ${room.used}. Remove or suspend one to add another.`;
+}
+
 export async function createVendor(shop, input, actor) {
   const name = input.name?.trim();
   const email = input.email?.trim().toLowerCase();
@@ -169,6 +178,9 @@ export async function createVendor(shop, input, actor) {
 
   const existing = await db.vendor.findUnique({ where: { shop_email: { shop, email } } });
   if (existing) return { errors: { email: "A vendor with this email already exists" } };
+
+  const room = await vendorAllowance(shop);
+  if (room.full) return { error: planFullMessage(room) };
 
   const handle = await uniqueHandle(shop, name);
 
@@ -198,6 +210,12 @@ export async function changeVendorStatus(shop, id, action, { reason, actor }) {
 
   if (!transition.from.includes(vendor.status)) {
     return { error: `This vendor is ${vendor.status.toLowerCase()} and can't be changed that way` };
+  }
+
+  if (transition.to === "ACTIVE" && vendor.status !== "ACTIVE") {
+    const room = await vendorAllowance(shop);
+    // A vendor already counted as pending doesn't take a second place when approved.
+    if (room.full && vendor.status !== "PENDING") return { error: planFullMessage(room) };
   }
 
   const trimmedReason = reason?.trim() || null;

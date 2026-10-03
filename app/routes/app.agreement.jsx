@@ -3,6 +3,8 @@ import { Form, useActionData, useLoaderData, useNavigation } from "react-router"
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
+import { requireFeature } from "../models/plan.server";
+import { FEATURES } from "../utils/plans";
 import {
   agreementOverview,
   discardAgreementDraft,
@@ -92,6 +94,9 @@ export const action = async ({ request }) => {
   }
 
   if (intent === "publish") {
+    const locked = await requireFeature(session.shop, FEATURES.AGREEMENT);
+    if (locked) return { intent, error: locked.error };
+
     const result = await publishAgreement(session.shop);
     return { intent, error: result.error ?? null, published: Boolean(result.published), version: result.version };
   }

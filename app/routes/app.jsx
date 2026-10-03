@@ -6,9 +6,22 @@ import { ensureCodRules } from "../models/cod-rules.server";
 import { ensureCollectionsSynced } from "../models/collection.server";
 import { ensureShopCurrency } from "../models/settings.server";
 import { reportError } from "../models/error-report.server";
+import { refreshPlan } from "../models/plan.server";
+import { planSelectionUrl } from "../partner-api.server";
 
 export const loader = async ({ request }) => {
-  const { admin, session } = await authenticate.admin(request);
+  const { admin, session, redirect } = await authenticate.admin(request);
+
+  // Which plan the store is on, asked of Shopify at most every quarter of an hour. Every
+  // page goes through here, so nothing else in the app has to remember to check.
+  const plan = await refreshPlan(admin, session.shop);
+
+  // Nobody has picked a plan yet, so there is nothing to show them but the plans. Shopify
+  // hosts that page, and it lives outside this app's frame.
+  if (!plan.subscribed && !plan.unconfigured) {
+    const url = planSelectionUrl(session.shop);
+    if (url) return redirect(url, { target: "_top" });
+  }
 
   // Shop details the vendor portal needs. Failures are logged, never block the admin,
   // and are retried on the next load.
@@ -23,8 +36,11 @@ export const loader = async ({ request }) => {
     }
   }
 
-  // eslint-disable-next-line no-undef
-  return { apiKey: process.env.SHOPIFY_API_KEY || "" };
+  return {
+    // eslint-disable-next-line no-undef
+    apiKey: process.env.SHOPIFY_API_KEY || "",
+    plan: { key: plan.key, name: plan.name, trialEndsAt: plan.trialEndsAt ?? null },
+  };
 };
 
 export default function App() {
@@ -41,6 +57,7 @@ export default function App() {
         <s-link href="/app/changes">Setting changes</s-link>
         <s-link href="/app/agreement">Seller agreement</s-link>
         <s-link href="/app/settings">Settings</s-link>
+        <s-link href="/app/plan">Plan</s-link>
         <s-link href="/app/health">Health</s-link>
       </s-app-nav>
       <Outlet />

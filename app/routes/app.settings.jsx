@@ -29,6 +29,9 @@ import { syncVendorShipping } from "../models/delivery-profile.server";
 import { ratesAreStale, ratesMatchCurrency } from "../models/fx.server";
 import { SELLER_PLACEHOLDER } from "../models/invoice.server";
 import { checkEmailAccount, emailAccount, sendEmail } from "../models/email.server";
+import { planFor, requireFeature } from "../models/plan.server";
+import { FEATURES, planThatUnlocks } from "../utils/plans";
+import { planSelectionUrl } from "../partner-api.server";
 import { connectPaypal, connectStripe, disconnectRail } from "../models/payout-rails.server";
 import { PAYPAL_CURRENCIES } from "../models/payout-rails/paypal.server";
 import db from "../db.server";
@@ -59,6 +62,7 @@ export const loader = async ({ request }) => {
     shopLocations(admin),
   ]);
 
+  const plan = await planFor(session.shop);
   const storeBase = settings.shopDomain ? settings.shopDomain.replace(/\/$/, "") : null;
   // A real seller's page reads better than a placeholder, when there is one to show.
   const exampleVendor = await db.vendor.findFirst({
@@ -68,6 +72,19 @@ export const loader = async ({ request }) => {
   });
 
   return {
+    plan: {
+      key: plan.key,
+      name: plan.name,
+      features: plan.features,
+      subscribed: plan.subscribed,
+      trialEndsAt: plan.trialEndsAt ? plan.trialEndsAt.toISOString() : null,
+      // Worked out here so the page can say which plan unlocks what without knowing the
+      // plans itself.
+      unlocks: Object.fromEntries(
+        Object.values(FEATURES).map((feature) => [feature, planThatUnlocks(feature).name]),
+      ),
+      changeUrl: planSelectionUrl(session.shop),
+    },
     currencyCode,
     locations: locations.map((location) => ({ id: location.id, name: location.name })),
     restockLocationId: settings.restockLocationId ?? "",
@@ -235,6 +252,9 @@ export const action = async ({ request }) => {
   }
 
   if (intent === "connectPaypal") {
+    const locked = await requireFeature(session.shop, FEATURES.PAYOUT_RAILS);
+    if (locked) return { intent, error: locked.error };
+
     const result = await connectPaypal(session.shop, {
       clientId: String(formData.get("clientId") ?? ""),
       secret: String(formData.get("secret") ?? ""),
@@ -244,6 +264,9 @@ export const action = async ({ request }) => {
   }
 
   if (intent === "connectStripe") {
+    const locked = await requireFeature(session.shop, FEATURES.PAYOUT_RAILS);
+    if (locked) return { intent, error: locked.error };
+
     const result = await connectStripe(session.shop, { secretKey: String(formData.get("secretKey") ?? "") });
     return { intent, error: result.error ?? null, errors: result.errors ?? null, saved: Boolean(result.ok) };
   }
@@ -254,6 +277,9 @@ export const action = async ({ request }) => {
   }
 
   if (intent === "autoSend") {
+    const locked = await requireFeature(session.shop, FEATURES.PAYOUT_RAILS);
+    if (locked) return { intent, error: locked.error };
+
     await db.shopSettings.upsert({
       where: { shop: session.shop },
       update: { autoSendPayouts: formData.get("autoSend") === "on" },
@@ -264,6 +290,9 @@ export const action = async ({ request }) => {
 
   // The same save either way; the second form only flips between daily rates and your own.
   if (intent === "payoutFx" || intent === "payoutFxMode") {
+    const locked = await requireFeature(session.shop, FEATURES.PAYOUT_FX);
+    if (locked) return { intent, error: locked.error };
+
     const result = await updatePayoutFx(session.shop, {
       enabled: formData.get("enabled") === "on",
       auto: formData.get("auto") === "on",
@@ -278,6 +307,9 @@ export const action = async ({ request }) => {
   }
 
   if (intent === "taxReporting") {
+    const locked = await requireFeature(session.shop, FEATURES.TAX_REPORTING);
+    if (locked) return { intent, error: locked.error };
+
     const result = await updateTaxReporting(session.shop, {
       us1099kAmount: formData.get("us1099kAmount"),
       us1099kTransactions: formData.get("us1099kTransactions"),
@@ -288,6 +320,9 @@ export const action = async ({ request }) => {
   }
 
   if (intent === "invoices") {
+    const locked = await requireFeature(session.shop, FEATURES.INVOICES);
+    if (locked) return { intent, error: locked.error };
+
     const result = await updateInvoiceSettings(session.shop, {
       businessName: formData.get("businessName"),
       businessAddress: formData.get("businessAddress"),
@@ -344,6 +379,9 @@ export const action = async ({ request }) => {
   }
 
   if (intent === "connectLabels") {
+    const locked = await requireFeature(session.shop, FEATURES.LABELS);
+    if (locked) return { intent, error: locked.error };
+
     const result = await connectLabelAccount(
       session.shop,
       String(formData.get("provider") ?? ""),
@@ -431,6 +469,7 @@ const CARRIER_STATUS = {
 
 export default function Settings() {
   const {
+    plan,
     commission,
     currencyCode,
     collections,
@@ -450,6 +489,30 @@ export default function Settings() {
     rules,
     vendorShipping,
   } = useLoaderData();
+  // A section the plan doesn't include says so, and says which plan opens it. Shown
+  // rather than hidden: hiding it means a merchant never finds out it exists.
+  const planLock = (feature, content) =>
+    plan.features.includes(feature) ? (
+      content
+    ) : (
+      <s-banner tone="info" heading={`Part of the ${plan.unlocks[feature]} plan`}>
+        <s-stack direction="block" gap="small">
+          <s-paragraph>
+            {plan.subscribed
+              ? `You're on ${plan.name}. Changing plan switches this on, and nothing you've already set up is lost.`
+              : "Pick a plan to switch this on."}
+          </s-paragraph>
+          {plan.changeUrl && (
+            <s-stack direction="inline">
+              <s-button href={plan.changeUrl} target="_top" variant="secondary">
+                See plans
+              </s-button>
+            </s-stack>
+          )}
+        </s-stack>
+      </s-banner>
+    );
+
   const actionData = useActionData();
   const navigation = useNavigation();
   const shopify = useAppBridge();
@@ -944,6 +1007,8 @@ export default function Settings() {
       </s-section>
 
       <s-section heading="Automatic payouts">
+        {planLock(FEATURES.PAYOUT_RAILS, (
+          <>
         <s-stack direction="block" gap="base">
           <s-paragraph color="subdued">
             Send payouts from your own PayPal or Stripe account instead of by hand. Vendors paid by
@@ -1055,9 +1120,13 @@ export default function Settings() {
             </s-stack>
           </Form>
         </s-stack>
+          </>
+        ))}
       </s-section>
 
       <s-section heading="Paying vendors in other currencies">
+        {planLock(FEATURES.PAYOUT_FX, (
+          <>
         <s-stack direction="block" gap="base">
           <s-paragraph color="subdued">
             {`Vendors can ask to be paid in their own currency. What they're owed stays in ${currencyCode}; each payout is converted when it's set aside, and the rate used is kept on the payout. Your bank's rate on the day is what actually counts.`}
@@ -1138,9 +1207,13 @@ export default function Settings() {
             </s-stack>
           </Form>
         </s-stack>
+          </>
+        ))}
       </s-section>
 
       <s-section heading="Commission invoices">
+        {planLock(FEATURES.INVOICES, (
+          <>
         <Form method="post">
           <input type="hidden" name="intent" value="invoices" />
           <s-stack direction="block" gap="base">
@@ -1209,9 +1282,13 @@ export default function Settings() {
             </s-stack>
           </s-stack>
         </Form>
+          </>
+        ))}
       </s-section>
 
       <s-section heading="Tax reporting">
+        {planLock(FEATURES.TAX_REPORTING, (
+          <>
         <Form method="post">
           <input type="hidden" name="intent" value="taxReporting" />
           <s-stack direction="block" gap="base">
@@ -1267,6 +1344,28 @@ export default function Settings() {
             </s-stack>
           </s-stack>
         </Form>
+          </>
+        ))}
+      </s-section>
+
+      <s-section heading="Your plan">
+        <s-stack direction="block" gap="base">
+          <s-paragraph color="subdued">
+            {plan.subscribed
+              ? `You're on ${plan.name}. Everything it includes is switched on; anything it doesn't is marked below.`
+              : "No plan chosen yet, so the marketplace is off."}
+          </s-paragraph>
+          <s-stack direction="inline" gap="small">
+            <s-button variant="secondary" href="/app/plan">
+              See what each plan includes
+            </s-button>
+            {plan.changeUrl && (
+              <s-button href={plan.changeUrl} target="_top">
+                Change plan
+              </s-button>
+            )}
+          </s-stack>
+        </s-stack>
       </s-section>
 
       <s-section heading="Emails">
@@ -1332,6 +1431,8 @@ export default function Settings() {
       </s-section>
 
       <s-section heading="Shipping labels">
+        {planLock(FEATURES.LABELS, (
+          <>
         <s-stack direction="block" gap="base">
           <s-paragraph color="subdued">
             Connect your own Shippo or EasyPost account and vendors will be able to buy labels for
@@ -1386,6 +1487,8 @@ export default function Settings() {
             </Form>
           )}
         </s-stack>
+          </>
+        ))}
       </s-section>
 
       <s-section heading="Couriers vendors can use">

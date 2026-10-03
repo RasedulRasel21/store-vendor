@@ -107,6 +107,16 @@ model ShopSettings {
   // store's own shipping, which is how a store starts.
   vendorShippingRates Boolean @default(false)
 
+  // Which plan this store is on, as last read from Shopify. Cached rather than asked for
+  // on every page: the Partner API is slow, rate-limited, and the answer changes monthly.
+  // NONE means no subscription was found; UNKNOWN means we couldn't ask, in which case
+  // the last good answer keeps working rather than locking a paying merchant out.
+  plan           String    @default("NONE")
+  // The plan handle exactly as it comes back from Shopify, for when ours stops matching.
+  planHandle     String?
+  planTrialEndsAt DateTime?
+  planCheckedAt  DateTime?
+
   // What a vendor's product has to have before they can submit it. All off by default:
   // a store that doesn't care shouldn't have rules it never asked for.
   minProductImages   Int      @default(0)
