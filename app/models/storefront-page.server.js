@@ -36,9 +36,9 @@ const STYLES = `
   .sv-store__card:hover { border-color: color-mix(in srgb, currentColor 45%, transparent); }
   .sv-store__avatar { flex: 0 0 auto; width: 3rem; height: 3rem; border-radius: 50%; object-fit: cover; background: color-mix(in srgb, currentColor 10%, transparent); }
   .sv-store__avatar--letter { display: flex; align-items: center; justify-content: center; font-weight: 700; }
-  .sv-store__card-name { font-weight: 600; overflow-wrap: break-word; }
-  .sv-store__card-blurb { margin: .2rem 0 0; font-size: .9em; opacity: .75; }
-  .sv-store__count { margin: .35rem 0 0; font-size: .8em; opacity: .6; }
+  .sv-store__card-name { display: block; font-weight: 600; overflow-wrap: break-word; }
+  .sv-store__card-blurb { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; margin: .25rem 0 0; font-size: .9em; line-height: 1.45; opacity: .75; }
+  .sv-store__count { display: block; margin: .45rem 0 0; font-size: .8em; opacity: .6; }
 
   .sv-store__banner { width: 100%; aspect-ratio: 4 / 1; object-fit: cover; border-radius: .6rem; margin-bottom: 1.25rem; }
   .sv-store__head { display: flex; gap: 1rem; align-items: center; margin-bottom: 1.5rem; }

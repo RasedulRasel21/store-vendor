@@ -8,13 +8,29 @@ import db from "../db.server";
 // filtering and pagination, so a vendor's page links there instead of building a worse
 // copy of it — and no Admin API call happens when a customer opens a page.
 
+// A sentence or so for a card in a list, cut at a word rather than through the middle of
+// one, and marked as cut so nobody reads a sentence that stops for no reason. The whole
+// thing is on the seller's own page.
+const BLURB_MAX = 120;
+
+function summarise(bio) {
+  const text = (bio ?? "").replace(/\s+/g, " ").trim();
+  if (!text) return null;
+  if (text.length <= BLURB_MAX) return text;
+
+  const cut = text.slice(0, BLURB_MAX);
+  const lastSpace = cut.lastIndexOf(" ");
+  // A long word with no space in it would otherwise leave nothing behind.
+  const kept = lastSpace > BLURB_MAX * 0.6 ? cut.slice(0, lastSpace) : cut;
+  return `${kept.replace(/[,;:.\s]+$/, "")}…`;
+}
+
 function card(vendor) {
   return {
     name: vendor.name,
     handle: vendor.handle,
     logoUrl: vendor.logoUrl,
-    // A sentence or so, for a card in a list.
-    blurb: vendor.bio ? vendor.bio.replace(/\s+/g, " ").trim().slice(0, 160) : null,
+    blurb: summarise(vendor.bio),
     productCount: vendor._count.products,
   };
 }
