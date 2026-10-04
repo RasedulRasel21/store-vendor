@@ -12,6 +12,7 @@ import { pruneWebhookEvents } from "../models/webhook-event.server";
 import { pruneErrorEvents, reportError } from "../models/error-report.server";
 import { pruneUptimeChecks, runHealthCheck } from "../models/health.server";
 import { prunePrivacyData } from "../models/privacy.server";
+import { refreshPlan } from "../models/plan.server";
 
 // Webhooks can be missed: the app can be down, a deploy can be mid-flight, or Shopify can
 // give up retrying. Once a night every shop's recent orders are read again, which fills in
@@ -59,6 +60,14 @@ export const loader = async ({ request }) => {
   for (const { shop } of shops) {
     try {
       const { admin } = await unauthenticated.admin(shop);
+
+      // What plan they're on. The app reads this whenever a merchant opens it, which
+      // covers subscribing, because Shopify sends them back into the app afterwards.
+      // Cancelling doesn't: that happens on Shopify's own apps page, and a merchant who
+      // never comes back would keep features they stopped paying for. Once a night is
+      // enough to close that.
+      await refreshPlan(admin, shop, { force: true });
+
       const synced = await syncRecentOrders(admin, shop, { days: DAYS, batchSize: ORDERS_PER_SHOP });
       // Any vendor order that changed without its ledger catching up gets caught up here.
       const ledger = await syncShopLedger(shop, {
