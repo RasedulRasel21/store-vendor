@@ -68,6 +68,19 @@ export const loader = async ({ request }) => {
     availableToPay: formatMoney(availableToPay, settings.currencyCode ?? "USD"),
     payoutsToSend: payoutsToSend + payoutRequests,
     setupGuideDismissed: Boolean(settings.setupGuideDismissedAt),
+    storefront: {
+      dismissed: Boolean(settings.storefrontGuideDismissedAt),
+      // Straight into the theme editor with the block ready to place, rather than
+      // leaving the merchant to find it under Apps. Matched on the app's client_id.
+      soldByLink: `https://${session.shop}/admin/themes/current/editor?template=product&addAppBlockId=${
+        // eslint-disable-next-line no-undef
+        process.env.SHOPIFY_API_KEY ?? ""
+      }/sold-by&target=mainSection`,
+      applyLink: `https://${session.shop}/admin/themes/current/editor?template=page&addAppBlockId=${
+        // eslint-disable-next-line no-undef
+        process.env.SHOPIFY_API_KEY ?? ""
+      }/apply&target=newAppsSection`,
+    },
     pending: overview.pending.map((vendor) => ({
       id: vendor.id,
       name: vendor.name,
@@ -83,6 +96,13 @@ export const action = async ({ request }) => {
 
   if (formData.get("intent") === "dismiss-setup-guide") {
     await dismissSetupGuide(session.shop);
+  }
+
+  if (formData.get("intent") === "dismiss-storefront") {
+    await db.shopSettings.update({
+      where: { shop: session.shop },
+      data: { storefrontGuideDismissedAt: new Date() },
+    });
   }
 
   return null;
@@ -101,6 +121,7 @@ export default function Index() {
     availableToPay,
     payoutsToSend,
     setupGuideDismissed,
+    storefront,
     alerts,
   } = useLoaderData();
 
@@ -161,6 +182,7 @@ export default function Index() {
   const fetcher = useFetcher();
   // Hide the guide as soon as the merchant dismisses it.
   const dismissing = fetcher.formData?.get("intent") === "dismiss-setup-guide";
+  const hidingStorefront = fetcher.formData?.get("intent") === "dismiss-storefront";
 
   const steps = [
     {
@@ -236,6 +258,55 @@ export default function Index() {
       <s-button slot="primary-action" variant="primary" href="/app/vendors/new">
         Add vendor
       </s-button>
+
+      {!storefront.dismissed && !hidingStorefront && (
+        <s-section heading="Show your sellers on your storefront">
+          <s-stack direction="block" gap="base">
+            <s-paragraph color="subdued">
+              Two blocks come with the app, and neither is switched on until you place it.
+              Each button opens your live theme with the block ready to drop in — move it
+              where you want and press Save.
+            </s-paragraph>
+
+            <s-grid gridTemplateColumns="1fr auto" gap="base" alignItems="center">
+              <s-stack direction="block" gap="small-200">
+                <s-text type="strong">Sold by</s-text>
+                <s-text color="subdued">
+                  Says who sells a product, on the product page, linking to that seller.
+                </s-text>
+              </s-stack>
+              <s-button variant="secondary" href={storefront.soldByLink} target="_top">
+                Add to product page
+              </s-button>
+            </s-grid>
+
+            <s-grid gridTemplateColumns="1fr auto" gap="base" alignItems="center">
+              <s-stack direction="block" gap="small-200">
+                <s-text type="strong">Sell with us</s-text>
+                <s-text color="subdued">
+                  The form people fill in to apply to sell with you. Make a page for it
+                  first, then add it there.
+                </s-text>
+              </s-stack>
+              <s-button variant="secondary" href={storefront.applyLink} target="_top">
+                Add to a page
+              </s-button>
+            </s-grid>
+
+            <s-grid gridTemplateColumns="1fr auto" gap="base" alignItems="center">
+              <s-text color="subdued">
+                Your sellers already have pages at /apps/vendors, with or without these.
+              </s-text>
+              <s-button
+                variant="tertiary"
+                onClick={() => fetcher.submit({ intent: "dismiss-storefront" }, { method: "post" })}
+              >
+                Done, hide this
+              </s-button>
+            </s-grid>
+          </s-stack>
+        </s-section>
+      )}
 
       {problems.length > 0 && (
         <s-section heading="Needs your attention">

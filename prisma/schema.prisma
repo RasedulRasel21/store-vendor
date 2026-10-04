@@ -40,6 +40,9 @@ model ShopSettings {
   commissionPercent Decimal  @default(10) @db.Decimal(5, 2)
   commissionFixed   Decimal  @default(0) @db.Decimal(12, 2)
   setupGuideDismissedAt DateTime?
+  // The merchant has put our blocks in their theme, or decided not to. Either way, stop
+  // asking: there is no way to read a theme for them without the themes scope.
+  storefrontGuideDismissedAt DateTime?
   // Shop currency (for example "BDT"), saved by the app so the vendor portal can show prices.
   currencyCode      String?
   // The shop's country, which decides the carriers Shopify offers for tracking.
