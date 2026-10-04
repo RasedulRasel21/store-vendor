@@ -160,6 +160,22 @@ export function getVendor(shop, id) {
 
 // Vendors added by the merchant are approved immediately. The owner's invite link
 // is created from the vendor page so the one-time token never travels in a URL.
+// Two sellers with the same name can't work, whatever we store against them. Shopify's
+// own product "vendor" is a plain string, so both would read the same in the admin's
+// filters, in the product list, and in "Sold by" on the storefront, where a shopper
+// clicking the name has no way of landing on the right one. Caught here instead.
+async function nameTaken(shop, name, exceptId) {
+  const clash = await db.vendor.findFirst({
+    where: {
+      shop,
+      name: { equals: name, mode: "insensitive" },
+      ...(exceptId ? { id: { not: exceptId } } : {}),
+    },
+    select: { name: true },
+  });
+  return clash ? `You already have a vendor called ${clash.name}. Use a name that tells them apart.` : null;
+}
+
 // Said the same way wherever the limit is reached, and it always names the way out.
 function planFullMessage(room) {
   const next = nextPlanUp(room.plan.key);
@@ -178,6 +194,9 @@ export async function createVendor(shop, input, actor) {
 
   const existing = await db.vendor.findUnique({ where: { shop_email: { shop, email } } });
   if (existing) return { errors: { email: "A vendor with this email already exists" } };
+
+  const clash = await nameTaken(shop, name);
+  if (clash) return { errors: { name: clash } };
 
   const room = await vendorAllowance(shop);
   if (room.full) return { error: planFullMessage(room) };
@@ -213,6 +232,11 @@ export async function changeVendorStatus(shop, id, action, { reason, actor }) {
   }
 
   if (transition.to === "ACTIVE" && vendor.status !== "ACTIVE") {
+    const nameClash = await nameTaken(shop, vendor.name, vendor.id);
+    if (nameClash) {
+      return { error: `${nameClash} Edit this vendor's name, then approve them.` };
+    }
+
     const room = await vendorAllowance(shop);
     // A vendor already counted as pending doesn't take a second place when approved.
     if (room.full && vendor.status !== "PENDING") return { error: planFullMessage(room) };
@@ -299,6 +323,11 @@ export async function updateVendor(shop, id, input, actor) {
 
   const errors = validateVendorInput(values);
   if (Object.keys(errors).length) return { errors };
+
+  if (values.name.toLowerCase() !== vendor.name.toLowerCase()) {
+    const renameClash = await nameTaken(shop, values.name, vendor.id);
+    if (renameClash) return { errors: { name: renameClash } };
+  }
 
   if (values.email !== vendor.email) {
     const taken = await db.vendor.findUnique({
