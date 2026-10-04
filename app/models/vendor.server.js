@@ -3,6 +3,7 @@ import db from "../db.server";
 import { parseCommission } from "../utils/commission";
 import { SHIPPING_MODES, VENDOR_STATUSES } from "../utils/vendor-display";
 import { nextPlanUp, vendorAllowance } from "./plan.server";
+import { syncVendorName } from "./vendor-product.server";
 import {
   notifyVendorApproved,
   notifyVendorInvited,
@@ -462,4 +463,47 @@ export async function updateVendorPermissions(shop, id, input, actor) {
   ]);
 
   return { saved: true };
+}
+
+/**
+ * A vendor renaming their own shop, from the portal.
+ *
+ * Saved straight away rather than waiting for the merchant: it's their shop's name, the
+ * same as their logo and their policies, which they already change themselves. Only
+ * payout details need approving, because only those move money.
+ *
+ * The name isn't ours alone, though — it's written on every one of their products in
+ * Shopify, which is what the storefront shows as "Sold by". So the rename isn't finished
+ * until those have caught up.
+ */
+export async function renameVendor(admin, shop, vendorId, rawName, actor) {
+  const name = String(rawName ?? "").trim().replace(/\s+/g, " ");
+
+  if (name.length < 2) return { errors: { name: "Enter the name you trade under" } };
+  if (name.length > 100) return { errors: { name: "Keep it to 100 characters or fewer" } };
+  if (!/\p{L}/u.test(name)) return { errors: { name: "Use letters, not only symbols" } };
+
+  const vendor = await db.vendor.findFirst({ where: { id: vendorId, shop }, select: { id: true, name: true } });
+  if (!vendor) return { error: "Vendor not found" };
+  if (vendor.name === name) return { ok: true, unchanged: true };
+
+  const clash = await nameTaken(shop, name, vendor.id);
+  // Said from the seller's side: whose name it clashes with is the shop's business.
+  if (clash) return { errors: { name: "Another seller in this shop already trades under that name." } };
+
+  await db.vendor.update({
+    where: { id: vendor.id },
+    data: {
+      name,
+      activities: {
+        create: { action: "vendor.renamed", actor, details: { from: vendor.name, to: name } },
+      },
+    },
+  });
+
+  // Their products carry the old name until this runs. A failure here leaves the rename
+  // in place and says so, rather than rolling back something the seller asked for.
+  const synced = await syncVendorName(admin, shop, vendor.id, name);
+
+  return { ok: true, products: synced.updated, failed: synced.failed };
 }
