@@ -63,6 +63,15 @@ export const loader = async ({ request }) => {
 
   const plan = await planFor(session.shop);
   const storeBase = settings.shopDomain ? settings.shopDomain.replace(/\/$/, "") : null;
+
+  // Deep links that drop the merchant into the theme editor with our block already being
+  // added, rather than leaving them to find it under Apps. The id is the app's own
+  // client_id, which is what Shopify matches app blocks on.
+  // eslint-disable-next-line no-undef
+  const appId = process.env.SHOPIFY_API_KEY ?? "";
+  const editor = (template, handle, target) =>
+    `https://${session.shop}/admin/themes/current/editor` +
+    `?template=${template}&addAppBlockId=${appId}/${handle}&target=${target}`;
   // A real seller's page reads better than a placeholder, when there is one to show.
   const exampleVendor = await db.vendor.findFirst({
     where: { shop: session.shop, status: "ACTIVE", products: { some: {} } },
@@ -163,6 +172,8 @@ export const loader = async ({ request }) => {
     storefront: {
       base: storeBase,
       directoryUrl: storeBase ? `${storeBase}/apps/vendors` : null,
+      soldByLink: editor("product", "sold-by", "mainSection"),
+      applyLink: editor("page", "apply", "newAppsSection"),
       exampleUrl: storeBase && exampleVendor ? `${storeBase}/apps/vendors/${exampleVendor.handle}` : null,
     },
     vendorShipping: {
@@ -727,17 +738,53 @@ export default function Settings() {
           <s-stack direction="block" gap="small">
             <s-text type="strong">Or put it straight in your theme</s-text>
             <s-paragraph color="subdued">
-              In the theme editor, add a block from Apps. There are two:{" "}
-              <s-text type="strong">Sold by</s-text>, which shows who sells a product on the
-              product page and links to their page, and{" "}
-              <s-text type="strong">Sell with us</s-text>, the application form. Both have
-              their own settings for wording and layout.
+              Two blocks come with the app. Each button below opens your live theme in the
+              editor with that block ready to place — press <s-text type="strong">Save</s-text>{" "}
+              in the editor and it&apos;s live.
             </s-paragraph>
-            <s-stack direction="inline">
-              <s-button variant="secondary" href="shopify://admin/themes" target="_top">
-                Open themes
-              </s-button>
-            </s-stack>
+
+            <s-box padding="base" border="base" borderRadius="base">
+              <s-stack direction="block" gap="small">
+                <s-text type="strong">Sold by</s-text>
+                <s-paragraph color="subdued">
+                  Shows who sells a product, on the product page, linking to that
+                  seller&apos;s page. Goes on the <s-text type="strong">product</s-text>{" "}
+                  template only. Its settings change the wording before the name and whether
+                  the seller&apos;s logo shows.
+                </s-paragraph>
+                <s-stack direction="inline">
+                  <s-button variant="secondary" href={storefront.soldByLink} target="_top">
+                    Add Sold by to your product page
+                  </s-button>
+                </s-stack>
+              </s-stack>
+            </s-box>
+
+            <s-box padding="base" border="base" borderRadius="base">
+              <s-stack direction="block" gap="small">
+                <s-text type="strong">Sell with us</s-text>
+                <s-paragraph color="subdued">
+                  The form people fill in to apply to sell with you. Goes on any page
+                  template — make a page called something like &quot;Sell with us&quot;
+                  first, then add it there. Its settings change the heading, the wording and
+                  which fields are asked for.
+                </s-paragraph>
+                <s-stack direction="inline">
+                  <s-button variant="secondary" href={storefront.applyLink} target="_top">
+                    Add the application form to a page
+                  </s-button>
+                </s-stack>
+              </s-stack>
+            </s-box>
+
+            <s-paragraph color="subdued">
+              To move or remove either one later, open the theme editor, find the block in
+              the left-hand list and drag it or press the bin. If the buttons above open the
+              editor without offering the block, your theme is an older one that
+              doesn&apos;t take app blocks — the vendor pages at{" "}
+              <s-text type="strong">/apps/vendors</s-text> still work, and a newer theme
+              will take the blocks.
+            </s-paragraph>
           </s-stack>
         </s-stack>
       </s-section>
