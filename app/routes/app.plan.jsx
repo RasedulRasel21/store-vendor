@@ -2,7 +2,6 @@ import { useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import { planFor, refreshPlan, vendorAllowance } from "../models/plan.server";
-import { planSelectionUrl } from "../partner-api.server";
 import { PLAN_ORDER, PLANS } from "../utils/plans";
 import { formatDate } from "../utils/vendor-display";
 
@@ -35,7 +34,7 @@ export const loader = async ({ request }) => {
 
   // Looking at this page is the one moment a merchant expects the plan to be right, so
   // it's asked for again rather than read from what was cached a quarter of an hour ago.
-  await refreshPlan(admin, session.shop, { force: true });
+  const { development } = await refreshPlan(admin, session.shop, { force: true });
   const [plan, room] = await Promise.all([planFor(session.shop), vendorAllowance(session.shop)]);
 
   return {
@@ -44,11 +43,11 @@ export const loader = async ({ request }) => {
       name: plan.name,
       price: plan.price,
       subscribed: plan.subscribed,
-      unconfigured: Boolean(plan.unconfigured),
+      development: Boolean(development),
       trialEndsAt: formatDate(plan.trialEndsAt),
     },
     vendors: { used: room.used, limit: room.limit, full: room.full },
-    changeUrl: planSelectionUrl(session.shop),
+    changeUrl: plan.pricingPageUrl,
     plans: PLAN_ORDER.map((key) => ({
       key,
       name: PLANS[key].name,
@@ -65,9 +64,10 @@ export default function Plan() {
 
   return (
     <s-page heading="Your plan">
-      {plan.unconfigured ? (
-        <s-banner tone="info" heading="Billing isn't switched on for this deployment">
-          Every feature is available. Set the Partner API variables and plans will apply.
+      {plan.development ? (
+        <s-banner tone="info" heading="This is a development store">
+          Every feature is available so the app can be built and tested. On a real store,
+          what&apos;s switched on follows the plan.
         </s-banner>
       ) : plan.subscribed ? (
         <s-banner

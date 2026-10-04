@@ -112,8 +112,11 @@ model ShopSettings {
   // NONE means no subscription was found; UNKNOWN means we couldn't ask, in which case
   // the last good answer keeps working rather than locking a paying merchant out.
   plan           String    @default("NONE")
-  // The plan handle exactly as it comes back from Shopify, for when ours stops matching.
+  // The subscription name exactly as Shopify gives it, for when our matching stops working.
   planHandle     String?
+  // The app's own handle, read from the same query, so a link to Shopify's pricing page
+  // needs no configuration and no second call.
+  appHandle      String?
   planTrialEndsAt DateTime?
   planCheckedAt  DateTime?
 

@@ -1,70 +1,92 @@
 import db from "../db.server";
 import { reportError } from "./error-report.server";
-import { fetchActiveSubscription, partnerApiConfigured } from "../partner-api.server";
-import { PLANS, planFromHandle, planThatUnlocks } from "../utils/plans";
+import { PLANS, planFromHandle } from "../utils/plans";
 
 // The plans themselves live in app/utils/plans.js, which holds no database and so can be
 // read by a page as well as by the server. This is the part that needs both.
 export { FEATURES, PLANS, PLAN_ORDER, nextPlanUp, planThatUnlocks } from "../utils/plans";
 
+// Which plan a store is on.
+//
+// Shopify App Pricing owns the subscription: the plans are set in the Partner Dashboard,
+// Shopify hosts the page where a merchant picks one, and this app never creates a charge.
+// All it does is ask which plan is active, and let that decide what is switched on.
+//
+// Asked of the Admin API, through the app's own installation record. No billing scope, no
+// billing config, no Partner API credentials — the subscription belongs to this app, so
+// the app can see it. (The App Pricing docs point at the Partner API for this; the Admin
+// API answers it too, with no setup, which is the same route a published app of ours
+// already uses.)
+const ACTIVE_PLAN = `#graphql
+  query ActivePlan {
+    currentAppInstallation {
+      activeSubscriptions { id name status test }
+      app { handle }
+    }
+    shop {
+      plan { partnerDevelopment }
+    }
+  }`;
+
+// Long enough that the question isn't asked on every page load, short enough that someone
+// who has just paid doesn't sit on their old plan.
 const FRESH_FOR_MS = 15 * 60 * 1000;
 
 /**
  * Reads the shop's plan, asking Shopify again only when what we have has gone stale.
  *
- * Never locks a paying merchant out. If the Partner API can't be reached, or answers with
- * a plan we don't recognise, the store keeps what it had — losing a feature you paid for
- * because of our network is worse than briefly giving one away.
+ * Never locks a paying merchant out. If the call fails, or the subscription has a name we
+ * don't recognise, the store keeps what it had — losing a feature you paid for because of
+ * our network or our naming is worse than briefly giving one away.
  */
 export async function refreshPlan(admin, shop, { force = false } = {}) {
   const settings = await db.shopSettings.findUnique({
     where: { shop },
-    select: { plan: true, planHandle: true, planCheckedAt: true, planTrialEndsAt: true },
+    select: { plan: true, planHandle: true, appHandle: true, planCheckedAt: true, planTrialEndsAt: true },
   });
 
   const fresh =
     settings?.planCheckedAt && Date.now() - settings.planCheckedAt.getTime() < FRESH_FOR_MS;
   if (!force && fresh) return current(settings);
 
-  // Nothing set up yet: every feature is on, so development and testing aren't blocked by
-  // billing that doesn't exist. In production the variables are set and this never runs.
-  if (!partnerApiConfigured()) return { ...current({ plan: "SCALE" }), unconfigured: true };
-
   try {
-    const shopResponse = await admin.graphql(`#graphql
-      query ShopId { shop { id } }`);
-    const { data } = await shopResponse.json();
-    const shopId = data?.shop?.id;
-    if (!shopId) throw new Error("Shopify didn't say which shop this is");
+    const response = await admin.graphql(ACTIVE_PLAN);
+    const { data } = await response.json();
 
-    const { subscription } = await fetchActiveSubscription(shopId);
+    const install = data?.currentAppInstallation;
+    const subscriptions = install?.activeSubscriptions ?? [];
+    const active = subscriptions.find((entry) => entry?.status === "ACTIVE") ?? subscriptions[0] ?? null;
+    const appHandle = install?.app?.handle ?? settings?.appHandle ?? null;
 
-    const item = subscription?.items?.[0];
-    const matched = subscription ? planFromHandle(item?.handle, item?.description) : null;
+    // A development store with nothing chosen is somebody building or testing, not a
+    // merchant dodging the bill. Everything is on, so the app can be worked on before its
+    // plans exist and reviewed before anyone has paid.
+    const development = Boolean(data?.shop?.plan?.partnerDevelopment) && !active;
 
-    if (subscription && !matched) {
+    const matched = active ? planFromHandle(active.name, active.name) : null;
+    if (active && !matched) {
       // They are paying for something. Which plan it is we can't tell, so they get
-      // everything until we fix the mapping — and we are told about it now.
-      await reportError(`Unknown plan handle "${item?.handle ?? "none"}"`, {
+      // everything until the naming is put right — and we are told about it now.
+      await reportError(`Subscription "${active.name}" matches no plan`, {
         context: "billing:unknown-plan",
         shop,
-        details: { handle: item?.handle ?? null, description: item?.description ?? null },
+        details: { name: active.name, status: active.status },
       });
     }
 
-    const plan = subscription ? (matched ?? "SCALE") : "NONE";
+    const plan = development ? "SCALE" : active ? (matched ?? "SCALE") : "NONE";
 
     await db.shopSettings.update({
       where: { shop },
       data: {
         plan,
-        planHandle: item?.handle ?? null,
-        planTrialEndsAt: subscription?.trialEndsAt ? new Date(subscription.trialEndsAt) : null,
+        planHandle: active?.name ?? null,
+        appHandle,
         planCheckedAt: new Date(),
       },
     });
 
-    return current({ plan, planHandle: item?.handle ?? null, planTrialEndsAt: subscription?.trialEndsAt ?? null });
+    return { ...current({ plan, planHandle: active?.name ?? null, appHandle }), development };
   } catch (error) {
     await reportError(error, { context: "billing:check", shop });
     // The last good answer, rather than treating a blip as "they stopped paying".
@@ -76,14 +98,10 @@ export async function refreshPlan(admin, shop, { force = false } = {}) {
 export async function planFor(shop) {
   const settings = await db.shopSettings.findUnique({
     where: { shop },
-    select: { plan: true, planHandle: true, planTrialEndsAt: true },
+    select: { plan: true, planHandle: true, appHandle: true, planTrialEndsAt: true },
   });
 
-  if (!settings) return current({ plan: "NONE" });
-  // Billing isn't set up on this deployment, so nothing is held back.
-  if (!partnerApiConfigured()) return { ...current({ plan: "SCALE" }), unconfigured: true };
-
-  return current(settings);
+  return current(settings ?? { plan: "NONE" });
 }
 
 function current(settings) {
@@ -97,12 +115,27 @@ function current(settings) {
     vendorLimit: plan?.vendorLimit ?? 0,
     features: plan?.features ?? [],
     subscribed: Boolean(plan),
-    handle: settings?.planHandle ?? null,
+    subscriptionName: settings?.planHandle ?? null,
     trialEndsAt: settings?.planTrialEndsAt ?? null,
+    pricingPageUrl: pricingPageUrl(settings?.appHandle),
     has(feature) {
       return Boolean(plan?.features.includes(feature));
     },
   };
+}
+
+/**
+ * Deep link to the page Shopify hosts for picking a plan.
+ *
+ * Embedded apps move around the admin with the shopify: protocol rather than a full
+ * admin.shopify.com URL: that is what App Bridge supports from inside the frame, and it
+ * resolves the current store itself, so there is no store handle to get wrong. Use it
+ * with target="_top" so the admin navigates rather than the iframe.
+ */
+export function pricingPageUrl(appHandle) {
+  // eslint-disable-next-line no-undef
+  const handle = appHandle || process.env.SHOPIFY_APP_HANDLE;
+  return handle ? `shopify://admin/charges/${handle}/pricing_plans` : null;
 }
 
 /**
@@ -133,7 +166,9 @@ export async function requireFeature(shop, feature) {
   const plan = await planFor(shop);
   if (plan.has(feature)) return null;
 
+  const { planThatUnlocks } = await import("../utils/plans");
   const needed = planThatUnlocks(feature);
+
   return {
     error: plan.subscribed
       ? `That's part of the ${needed.name} plan. Change plan to switch it on.`

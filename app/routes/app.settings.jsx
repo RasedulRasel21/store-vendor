@@ -31,7 +31,6 @@ import { SELLER_PLACEHOLDER } from "../models/invoice.server";
 import { checkEmailAccount, emailAccount, sendEmail } from "../models/email.server";
 import { planFor, requireFeature } from "../models/plan.server";
 import { FEATURES, planThatUnlocks } from "../utils/plans";
-import { planSelectionUrl } from "../partner-api.server";
 import { connectPaypal, connectStripe, disconnectRail } from "../models/payout-rails.server";
 import { PAYPAL_CURRENCIES } from "../models/payout-rails/paypal.server";
 import db from "../db.server";
@@ -83,7 +82,7 @@ export const loader = async ({ request }) => {
       unlocks: Object.fromEntries(
         Object.values(FEATURES).map((feature) => [feature, planThatUnlocks(feature).name]),
       ),
-      changeUrl: planSelectionUrl(session.shop),
+      changeUrl: plan.pricingPageUrl,
     },
     currencyCode,
     locations: locations.map((location) => ({ id: location.id, name: location.name })),

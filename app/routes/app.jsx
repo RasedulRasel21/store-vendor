@@ -7,7 +7,6 @@ import { ensureCollectionsSynced } from "../models/collection.server";
 import { ensureShopCurrency } from "../models/settings.server";
 import { reportError } from "../models/error-report.server";
 import { refreshPlan } from "../models/plan.server";
-import { planSelectionUrl } from "../partner-api.server";
 
 export const loader = async ({ request }) => {
   const { admin, session, redirect } = await authenticate.admin(request);
@@ -24,9 +23,8 @@ export const loader = async ({ request }) => {
 
   // Nobody has picked a plan yet, so there is nothing to show them but the plans. Shopify
   // hosts that page, and it lives outside this app's frame.
-  if (!plan.subscribed && !plan.unconfigured) {
-    const url = planSelectionUrl(session.shop);
-    if (url) return redirect(url, { target: "_top" });
+  if (!plan.subscribed && plan.pricingPageUrl) {
+    return redirect(plan.pricingPageUrl, { target: "_top" });
   }
 
   // Shop details the vendor portal needs. Failures are logged, never block the admin,
