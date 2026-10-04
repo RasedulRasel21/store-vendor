@@ -14,7 +14,13 @@ export const loader = async ({ request }) => {
 
   // Which plan the store is on, asked of Shopify at most every quarter of an hour. Every
   // page goes through here, so nothing else in the app has to remember to check.
-  const plan = await refreshPlan(admin, session.shop);
+  //
+  // Coming back from picking a plan, Shopify adds plan_handle to the URL. That is a hint,
+  // not proof -- anyone can type it -- so it isn't read as the answer. It just means now
+  // is the moment to ask again, rather than leaving the merchant on their old plan for up
+  // to a quarter of an hour after paying.
+  const justSubscribed = new URL(request.url).searchParams.has("plan_handle");
+  const plan = await refreshPlan(admin, session.shop, { force: justSubscribed });
 
   // Nobody has picked a plan yet, so there is nothing to show them but the plans. Shopify
   // hosts that page, and it lives outside this app's frame.
