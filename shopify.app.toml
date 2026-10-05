@@ -24,6 +24,10 @@ description = "StoreVendor vendor that owns this product"
 
   [product.metafields.app.vendor_id.access]
   admin = "merchant_read"
+  # Read by our own "Sold by" block, which must only appear on products that belong to a
+  # seller. Without this the block can't tell ours from the shop's own stock, and links a
+  # shopper to a seller page that doesn't exist.
+  storefront = "public_read"
 
 [webhooks]
 api_version = "2026-10"

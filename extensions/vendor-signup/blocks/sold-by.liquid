@@ -1,20 +1,24 @@
 {%- comment -%}
   "Sold by <seller>" on a product page, linking to that seller's page in this shop.
 
-  The link is built from the product's vendor name, which the app sets on every product it
-  links to a seller. The app resolves it either way round, so a name with an apostrophe or
-  an accent still finds the right shop.
+  Only for products that belong to one of the app's sellers, which is what the vendor_id
+  metafield marks. Shopify's own "vendor" field is free text that every product has --
+  the shop's own stock included -- and linking those to a seller page sends a shopper
+  somewhere that was never there.
 
-  Nothing is shown for a product with no vendor, so a shop that only sometimes uses
-  sellers doesn't get an empty line on every other product.
+  The link itself is built from the vendor's name, which the app writes onto every
+  product it links to a seller, and keeps in step when a seller renames themselves. The
+  app resolves it either way round, so a name with an apostrophe or an accent still finds
+  the right shop.
 {%- endcomment -%}
 
 {%- liquid
+  assign vendor_id = product.metafields.app.vendor_id.value | default: '' | strip
   assign vendor_name = product.vendor | strip
   assign vendor_handle = vendor_name | handleize
 -%}
 
-{%- if vendor_name != blank -%}
+{%- if vendor_id != blank and vendor_name != blank -%}
   <div class="sv-soldby" {{ block.shopify_attributes }}>
     <span class="sv-soldby__label">{{ block.settings.label | default: 'Sold by' }}</span>
     {%- if block.settings.link_to_page -%}

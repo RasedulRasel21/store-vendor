@@ -130,3 +130,25 @@ export function vendorStorePage(vendor) {
       }
     </div></div>`;
 }
+
+/**
+ * Shown where a seller's page would be, when there is no such seller.
+ *
+ * A shopper reaches this by following a "Sold by" link for a product the app doesn't
+ * know -- the store's own stock, or something from a seller who has since gone. They
+ * arrived from a real link on a real shop, so they get a page with a way onwards rather
+ * than the word "Not found", which is a dead end and a web error besides.
+ */
+export function unknownVendorPage({ heading = "We can't find that seller" } = {}) {
+  return `${STYLES}
+    <div class="sv-store"><div class="sv-store__inner">
+      <h1 class="sv-store__heading">${escapeHtml(heading)}</h1>
+      <p class="sv-store__lede">
+        This product isn't sold by one of our listed sellers, or that seller isn't selling
+        here any more.
+      </p>
+      <p class="sv-store__empty">
+        <a class="sv-store__back" href="/apps/vendors">See all our sellers</a>
+      </p>
+    </div></div>`;
+}
