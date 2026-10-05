@@ -12,8 +12,25 @@
   the right shop.
 {%- endcomment -%}
 
+{%- comment -%}
+  The metafield is in this app's own reserved namespace, which is literally
+  "app--<the app's id>". Liquid has no alias for it on a product: "metafields.app" reads
+  a namespace called "app", which nothing writes to. The id below is this app's, fixed
+  for its lifetime -- if the app were ever recreated it would change, and the block would
+  quietly stop appearing, so it is written out here where it can be found.
+
+  The second read is kept in case Shopify adds the alias later; whichever answers first
+  wins, and neither can produce a wrong seller.
+{%- endcomment -%}
+
 {%- liquid
-  assign vendor_id = product.metafields.app.vendor_id.value | default: '' | strip
+  assign sv_namespace = 'app--423144194049'
+  assign vendor_id = product.metafields[sv_namespace].vendor_id.value | default: '' | strip
+
+  if vendor_id == blank
+    assign vendor_id = product.metafields.app.vendor_id.value | default: '' | strip
+  endif
+
   assign vendor_name = product.vendor | strip
   assign vendor_handle = vendor_name | handleize
 -%}
