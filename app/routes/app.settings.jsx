@@ -173,7 +173,6 @@ export const loader = async ({ request }) => {
       base: storeBase,
       directoryUrl: storeBase ? `${storeBase}/apps/vendors` : null,
       soldByLink: editor("product", "sold-by", "mainSection"),
-      applyLink: editor("page", "apply", "newAppsSection"),
       exampleUrl: storeBase && exampleVendor ? `${storeBase}/apps/vendors/${exampleVendor.handle}` : null,
     },
     vendorShipping: {
@@ -435,7 +434,7 @@ export const action = async ({ request }) => {
 
     const result = await sendEmail(session.shop, {
       to: settings.shopEmail,
-      subject: "Your marketplace can send email",
+      subject: "Your store can send supplier email",
       text: [
         "This is the test from your app's settings, and it arrived, so your sellers will get theirs too.",
         "They are emailed when they are approved, when an order comes in, when a product is approved or sent back, and when their money moves. You are emailed the things only you can act on.",
@@ -745,45 +744,28 @@ export default function Settings() {
 
             <s-box padding="base" border="base" borderRadius="base">
               <s-stack direction="block" gap="small">
-                <s-text type="strong">Sold by</s-text>
+                <s-text type="strong">Brand</s-text>
                 <s-paragraph color="subdued">
-                  Shows who sells a product, on the product page, linking to that
-                  seller&apos;s page. Goes on the <s-text type="strong">product</s-text>{" "}
-                  template only. Its settings change the wording before the name and whether
-                  the seller&apos;s logo shows.
+                  Credits the brand behind a product, the way a shop credits a label it
+                  stocks. Goes on the <s-text type="strong">product</s-text> template only.
+                  Its settings change the wording before the name, and whether it links to
+                  that brand&apos;s page — it doesn&apos;t until you switch that on.
                 </s-paragraph>
                 <s-stack direction="inline">
                   <s-button variant="secondary" href={storefront.soldByLink} target="_top">
-                    Add Sold by to your product page
-                  </s-button>
-                </s-stack>
-              </s-stack>
-            </s-box>
-
-            <s-box padding="base" border="base" borderRadius="base">
-              <s-stack direction="block" gap="small">
-                <s-text type="strong">Sell with us</s-text>
-                <s-paragraph color="subdued">
-                  The form people fill in to apply to sell with you. Goes on any page
-                  template — make a page called something like &quot;Sell with us&quot;
-                  first, then add it there. Its settings change the heading, the wording and
-                  which fields are asked for.
-                </s-paragraph>
-                <s-stack direction="inline">
-                  <s-button variant="secondary" href={storefront.applyLink} target="_top">
-                    Add the application form to a page
+                    Add it to your product page
                   </s-button>
                 </s-stack>
               </s-stack>
             </s-box>
 
             <s-paragraph color="subdued">
-              To move or remove either one later, open the theme editor, find the block in
-              the left-hand list and drag it or press the bin. If the buttons above open the
-              editor without offering the block, your theme is an older one that
-              doesn&apos;t take app blocks — the vendor pages at{" "}
+              To move or remove it later, open the theme editor, find the block in the
+              left-hand list and drag it or press the bin. If the button opens the editor
+              without offering the block, your theme is an older one that doesn&apos;t take
+              app blocks — the brand pages at{" "}
               <s-text type="strong">/apps/vendors</s-text> still work, and a newer theme
-              will take the blocks.
+              will take the block.
             </s-paragraph>
           </s-stack>
         </s-stack>
@@ -794,9 +776,10 @@ export default function Settings() {
           <input type="hidden" name="intent" value="applications" />
           <s-stack direction="block" gap="base">
             <s-paragraph color="subdued">
-              Anyone can apply to sell in your store from this page. Applications arrive as
-              vendors awaiting your approval, and nobody can sign in until you approve them.
-              Link to it from your storefront, your social accounts, anywhere.
+              Off unless you want it. Most merchants invite the suppliers they already buy
+              from, which is the button on the Vendors page. Switch this on and you get a
+              page you can send people to — applications arrive as vendors awaiting your
+              approval, and nobody can sign in until you approve them.
             </s-paragraph>
 
             {applications.storefrontUrl || applications.url ? (
@@ -1339,7 +1322,7 @@ export default function Settings() {
           <input type="hidden" name="intent" value="taxReporting" />
           <s-stack direction="block" gap="base">
             <s-paragraph color="subdued">
-              As the marketplace operator you report vendors&apos; sales: 1099-K for vendors in the US,
+              As the shop selling the goods you report your suppliers&apos; sales: 1099-K in the US,
               DAC7 for vendors in the EU. Vendors add their tax details in the portal, and the reports
               under Payouts flag anyone missing something. These limits change with the law, so check
               them before you file.
@@ -1399,7 +1382,7 @@ export default function Settings() {
           <s-paragraph color="subdued">
             {plan.subscribed
               ? `You're on ${plan.name}. Everything it includes is switched on; anything it doesn't is marked below.`
-              : "No plan chosen yet, so the marketplace is off."}
+              : "No plan chosen yet, so the app is off."}
           </s-paragraph>
           <s-stack direction="inline" gap="small">
             <s-button variant="secondary" href="/app/plan">

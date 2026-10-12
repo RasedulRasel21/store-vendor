@@ -183,7 +183,7 @@ export default function Health() {
         ) : (
           <s-stack direction="block" gap="base">
             <s-paragraph>
-              Nothing is checking on the marketplace yet, so there&apos;s no history to show.
+              Nothing is checking on the app yet, so there&apos;s no history to show.
               Point any uptime monitor at the address below — UptimeRobot and Better Stack both
               have a free tier — and set it to check every five minutes. Each check is recorded
               here, and it watches the vendor portal at the same time.

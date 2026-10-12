@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "9d6ec23bee136279fd8274b30450b7e5"
-name = "StoreVendor ‑ Marketplace"
+name = "StoreVendor: Vendor Manager"
 application_url = "https://store-vendor.vercel.app"
 embedded = true
 

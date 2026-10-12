@@ -50,8 +50,8 @@ export async function recordDataRequest(shop, payload) {
     collectedAt: new Date().toISOString(),
     // Said plainly, because this ends up in front of a customer who asked a simple question.
     about:
-      "The marketplace app for this store keeps a copy of each order, split by seller, so " +
-      "each seller can pack and post their own part of it. This is everything it holds " +
+      "The supplier app for this store keeps a copy of each order, split by supplier, so " +
+      "each one can pack and post the part they supply. This is everything it holds " +
       "about this customer.",
     customer: { id: customer.id ?? null, email: customer.email ?? null, phone: customer.phone ?? null },
     orders: orders.map((order) => ({
@@ -98,7 +98,7 @@ export async function recordDataRequest(shop, payload) {
     text: [
       `${customer.email ?? "A customer"} has made a data request through Shopify.`,
       "",
-      `The marketplace app holds ${summary.toLowerCase()}.`,
+      `The supplier app holds ${summary.toLowerCase()}.`,
       "",
       "Open the app, go to Privacy requests, and download it to send on. You have 30 days " +
         "to answer, and the copy is deleted here after that.",

@@ -9,12 +9,12 @@ export const VENDOR_STATUSES = Object.keys(VENDOR_STATUS);
 
 export const SHIPPING_MODE = {
   VENDOR_SHIPS: {
-    label: "Vendor ships",
-    details: "The vendor packs and ships their own order lines and adds tracking.",
+    label: "Supplier dispatches",
+    details: "The supplier packs and dispatches these items for you, and adds the tracking.",
   },
   STORE_SHIPS: {
-    label: "Store ships",
-    details: "The vendor sends stock to you, and you fulfill their orders.",
+    label: "You dispatch",
+    details: "The supplier sends stock to you, and you dispatch it with the rest of the order.",
   },
 };
 

@@ -138,7 +138,11 @@ model ShopSettings {
   // and what it says. The handle is unique across every store, because the page is served
   // from one address for all of them.
   applyHandle   String?  @unique
-  applyOpen     Boolean  @default(true)
+  // Off until the merchant turns it on. A form on the storefront inviting the public to
+  // become sellers is what makes a shop look like a venue for other people's shops; a
+  // merchant who wants applications can open them, and most will just invite who they
+  // already buy from.
+  applyOpen     Boolean  @default(false)
   applyIntro    String?
   applyTermsUrl String?
 

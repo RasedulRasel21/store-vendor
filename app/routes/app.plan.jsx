@@ -80,7 +80,7 @@ export default function Plan() {
         </s-banner>
       ) : (
         <s-banner tone="critical" heading="No plan chosen yet">
-          Pick a plan to start using the marketplace.
+          Pick a plan to start using the app.
         </s-banner>
       )}
 

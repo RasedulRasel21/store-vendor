@@ -155,7 +155,7 @@ async function emailMerchant(shop, { subject, lines, template, related }) {
   return sendEmail(shop, {
     to: shopEmail,
     subject,
-    text: [...lines.filter(Boolean), `${store} marketplace`].join("\n\n"),
+    text: [...lines.filter(Boolean), `${store}`].join("\n\n"),
     template,
     related,
   });
@@ -230,7 +230,7 @@ export async function notifyVendorInvited(shop, vendorId, inviteUrl) {
   return emailVendor(shop, vendorId, {
     subject: `Set up your seller account with ${store}`,
     lines: [
-      `${store} has set you up as a seller on their marketplace.`,
+      `${store} has set you up to supply products to their shop.`,
       `Choose a password and you are in:\n${inviteUrl}`,
       "The link works once, and runs out in a week. If it has expired, ask the store for a new one.",
     ],

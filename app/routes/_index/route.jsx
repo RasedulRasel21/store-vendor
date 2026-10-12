@@ -16,23 +16,24 @@ export default function App() {
   return (
     <div className={styles.index}>
       <div className={styles.content}>
-        <h1 className={styles.heading}>StoreVendor ‑ Marketplace</h1>
+        <h1 className={styles.heading}>StoreVendor: Vendor Manager</h1>
         <p className={styles.text}>
-          Turn your Shopify store into a multi-vendor marketplace.
+          Stock your shop with products from suppliers you choose, and keep
+          control of what goes on sale.
         </p>
         <ul className={styles.list}>
           <li>
-            <strong>Vendor management</strong>. Invite vendors, review
-            applications, and approve or suspend sellers from your Shopify
-            admin.
+            <strong>You decide what sells</strong>. Nothing a supplier submits
+            reaches your storefront until you have seen it and approved it.
           </li>
           <li>
-            <strong>Vendor portal</strong>. Vendors manage their own products,
-            orders, and earnings in a dedicated portal.
+            <strong>Suppliers do their own paperwork</strong>. They add their
+            products, follow the orders they supply and see what they have
+            earned, without touching your admin.
           </li>
           <li>
-            <strong>Commissions and payouts</strong>. Split every order by
-            vendor and track what each vendor has earned.
+            <strong>Commission worked out for you</strong>. Every order is
+            split by supplier, reversed on a refund, and settled to you first.
           </li>
         </ul>
         <p className={styles.note}>

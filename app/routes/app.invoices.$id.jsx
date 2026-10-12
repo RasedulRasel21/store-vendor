@@ -68,7 +68,7 @@ export default function Invoice() {
             <s-text color="subdued">Issued</s-text>
             <s-text>{invoice.issuedAt}</s-text>
             <s-text color="subdued">For</s-text>
-            <s-text>{`Marketplace commission, ${invoice.period}`}</s-text>
+            <s-text>{`Commission, ${invoice.period}`}</s-text>
           </s-grid>
 
           <s-table>

@@ -1,10 +1,15 @@
 {%- comment -%}
-  "Sold by <seller>" on a product page, linking to that seller's page in this shop.
+  Who made or supplies a product, on its product page.
 
-  Only for products that belong to one of the app's sellers, which is what the vendor_id
-  metafield marks. Shopify's own "vendor" field is free text that every product has --
-  the shop's own stock included -- and linking those to a seller page sends a shopper
-  somewhere that was never there.
+  Attribution, not a claim about who sells it: the shop sells everything in it, and this
+  says which of its suppliers the product came from, the way a shop credits a brand. The
+  wording and whether it links anywhere are the merchant's to set, and it links nowhere
+  until they say so.
+
+  Only for products that belong to one of the app's suppliers, which is what the
+  vendor_id metafield marks. Shopify's own "vendor" field is free text that every product
+  has -- the shop's own stock included -- and linking those somewhere sends a shopper to
+  a page that was never there.
 
   The link itself is built from the vendor's name, which the app writes onto every
   product it links to a seller, and keeps in step when a seller renames themselves. The
@@ -37,7 +42,7 @@
 
 {%- if vendor_id != blank and vendor_name != blank -%}
   <div class="sv-soldby" {{ block.shopify_attributes }}>
-    <span class="sv-soldby__label">{{ block.settings.label | default: 'Sold by' }}</span>
+    <span class="sv-soldby__label">{{ block.settings.label | default: 'Brand' }}</span>
     {%- if block.settings.link_to_page -%}
       <a class="sv-soldby__name" href="/apps/vendors/{{ vendor_handle }}">{{ vendor_name }}</a>
     {%- else -%}
@@ -48,18 +53,18 @@
 
 {% schema %}
 {
-  "name": "Sold by",
+  "name": "Brand",
   "target": "section",
   "stylesheet": "vendor-apply.css",
   "enabled_on": { "templates": ["product"] },
   "settings": [
-    { "type": "text", "id": "label", "label": "Wording before the name", "default": "Sold by" },
+    { "type": "text", "id": "label", "label": "Wording before the name", "default": "Brand" },
     {
       "type": "checkbox",
       "id": "link_to_page",
-      "label": "Link to the seller's page",
-      "default": true,
-      "info": "Their page lists who they are, how they ship and their returns."
+      "label": "Link to the brand's page",
+      "default": false,
+      "info": "Their page says who they are and what else you stock from them."
     }
   ]
 }

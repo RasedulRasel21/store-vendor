@@ -76,10 +76,6 @@ export const loader = async ({ request }) => {
         // eslint-disable-next-line no-undef
         process.env.SHOPIFY_API_KEY ?? ""
       }/sold-by&target=mainSection`,
-      applyLink: `https://${session.shop}/admin/themes/current/editor?template=page&addAppBlockId=${
-        // eslint-disable-next-line no-undef
-        process.env.SHOPIFY_API_KEY ?? ""
-      }/apply&target=newAppsSection`,
     },
     pending: overview.pending.map((vendor) => ({
       id: vendor.id,
@@ -260,19 +256,19 @@ export default function Index() {
       </s-button>
 
       {!storefront.dismissed && !hidingStorefront && (
-        <s-section heading="Show your sellers on your storefront">
+        <s-section heading="Credit your brands on your storefront">
           <s-stack direction="block" gap="base">
             <s-paragraph color="subdued">
-              Two blocks come with the app, and neither is switched on until you place it.
-              Each button opens your live theme with the block ready to drop in — move it
-              where you want and press Save.
+              A block comes with the app, and it does nothing until you place it. The button
+              opens your live theme with it ready to drop in — move it where you want and
+              press Save.
             </s-paragraph>
 
             <s-grid gridTemplateColumns="1fr auto" gap="base" alignItems="center">
               <s-stack direction="block" gap="small-200">
-                <s-text type="strong">Sold by</s-text>
+                <s-text type="strong">Brand</s-text>
                 <s-text color="subdued">
-                  Says who sells a product, on the product page, linking to that seller.
+                  Credits the brand behind a product, on its product page.
                 </s-text>
               </s-stack>
               <s-button variant="secondary" href={storefront.soldByLink} target="_top">
@@ -281,21 +277,8 @@ export default function Index() {
             </s-grid>
 
             <s-grid gridTemplateColumns="1fr auto" gap="base" alignItems="center">
-              <s-stack direction="block" gap="small-200">
-                <s-text type="strong">Sell with us</s-text>
-                <s-text color="subdued">
-                  The form people fill in to apply to sell with you. Make a page for it
-                  first, then add it there.
-                </s-text>
-              </s-stack>
-              <s-button variant="secondary" href={storefront.applyLink} target="_top">
-                Add to a page
-              </s-button>
-            </s-grid>
-
-            <s-grid gridTemplateColumns="1fr auto" gap="base" alignItems="center">
               <s-text color="subdued">
-                Your sellers already have pages at /apps/vendors, with or without these.
+                Your brands already have pages at /apps/vendors, with or without it.
               </s-text>
               <s-button
                 variant="tertiary"
@@ -332,7 +315,7 @@ export default function Index() {
       )}
 
       {completedSteps < steps.length && !setupGuideDismissed && !dismissing && (
-        <s-section heading="Set up your marketplace">
+        <s-section heading="Set up your suppliers">
           <s-stack direction="block" gap="base">
             <s-grid gridTemplateColumns="1fr auto" gap="base" alignItems="center">
               <s-paragraph color="subdued">

@@ -500,7 +500,7 @@ export default function VendorOrderDetail() {
           </s-stack>
           <s-link href={`/app/vendors/${order.vendor.id}`}>{order.vendor.name}</s-link>
           <s-text color="subdued">
-            {order.shippingMode === "VENDOR_SHIPS" ? "Vendor ships" : "Store ships"}
+            {order.shippingMode === "VENDOR_SHIPS" ? "Supplier dispatches" : "You dispatch"}
           </s-text>
           {order.isPickup ? (
             <s-text color="subdued">Customer collects from the store</s-text>

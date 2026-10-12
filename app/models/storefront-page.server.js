@@ -64,10 +64,10 @@ function avatar(vendor, className = "sv-store__avatar") {
   return `<span class="${className} ${className}--letter" aria-hidden="true">${initial}</span>`;
 }
 
-export function directoryPage(vendors, { heading = "Our sellers", intro } = {}) {
+export function directoryPage(vendors, { heading = "Brands we stock", intro } = {}) {
   const lede = intro
     ? `<p class="sv-store__lede">${escapeHtml(intro)}</p>`
-    : `<p class="sv-store__lede">The independent sellers whose products you'll find here.</p>`;
+    : `<p class="sv-store__lede">The makers and suppliers behind the products in this shop.</p>`;
 
   const body = vendors.length
     ? `<ul class="sv-store__grid">${vendors
@@ -83,7 +83,7 @@ export function directoryPage(vendors, { heading = "Our sellers", intro } = {}) 
       </a></li>`,
         )
         .join("")}</ul>`
-    : `<p class="sv-store__empty">No sellers are listed yet. Check back soon.</p>`;
+    : `<p class="sv-store__empty">No brands are listed yet. Check back soon.</p>`;
 
   return `${STYLES}
     <div class="sv-store"><div class="sv-store__inner">
@@ -99,7 +99,7 @@ export function vendorStorePage(vendor) {
 
   return `${STYLES}
     <div class="sv-store"><div class="sv-store__inner">
-      <a class="sv-store__back" href="/apps/vendors">← All sellers</a>
+      <a class="sv-store__back" href="/apps/vendors">← All brands</a>
       ${vendor.bannerUrl ? `<img class="sv-store__banner" src="${escapeHtml(vendor.bannerUrl)}" alt="" loading="lazy">` : ""}
 
       <div class="sv-store__head">
@@ -132,23 +132,23 @@ export function vendorStorePage(vendor) {
 }
 
 /**
- * Shown where a seller's page would be, when there is no such seller.
+ * Shown where a brand's page would be, when there is no such brand.
  *
- * A shopper reaches this by following a "Sold by" link for a product the app doesn't
- * know -- the store's own stock, or something from a seller who has since gone. They
- * arrived from a real link on a real shop, so they get a page with a way onwards rather
- * than the word "Not found", which is a dead end and a web error besides.
+ * A shopper reaches this by following a brand link for a product the app doesn't know --
+ * the shop's own stock, or something from a supplier who has since gone. They arrived
+ * from a real link on a real shop, so they get a page with a way onwards rather than the
+ * word "Not found", which is a dead end and a web error besides.
  */
-export function unknownVendorPage({ heading = "We can't find that seller" } = {}) {
+export function unknownVendorPage({ heading = "We can't find that brand" } = {}) {
   return `${STYLES}
     <div class="sv-store"><div class="sv-store__inner">
       <h1 class="sv-store__heading">${escapeHtml(heading)}</h1>
       <p class="sv-store__lede">
-        This product isn't sold by one of our listed sellers, or that seller isn't selling
-        here any more.
+        This product isn't from one of the brands listed here, or we don't stock that brand
+        any more.
       </p>
       <p class="sv-store__empty">
-        <a class="sv-store__back" href="/apps/vendors">See all our sellers</a>
+        <a class="sv-store__back" href="/apps/vendors">See the brands we stock</a>
       </p>
     </div></div>`;
 }
